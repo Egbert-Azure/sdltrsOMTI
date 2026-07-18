@@ -54,7 +54,7 @@ extern void  trs_omti_getgeometry(int unit, int *cyls, int *head, int *secs);
  */
 #define TRS_OMTI_PORT    0x40 /* data/command port (read/write) */
 #define TRS_OMTI_STATUS  0x41 /* status (read) / software reset (write) */
-#define TRS_OMTI_SELECT  0x42 /* select strobe (write) / config (read, unused) */
+#define TRS_OMTI_SELECT  0x42 /* select strobe (write) / card-present ID, reads 0xFA (read) */
 #define TRS_OMTI_MASK    0x43 /* DMA/interrupt mask (write, not emulated) */
 
 /*
@@ -94,7 +94,13 @@ extern void  trs_omti_getgeometry(int unit, int *cyls, int *head, int *secs);
 #define TRS_OMTI_CDB2_CYLMASK  0xc0
 #define TRS_OMTI_CDB2_CYLSHIFT 6
 
-/* SET DRIVE CHARACTERISTICS parameter block length */
+/* SET DRIVE CHARACTERISTICS parameter block length and layout: byte 0-1
+ * are the cylinder count (MSB first), byte 2 is the head count. The
+ * remaining bytes (reduced write current cylinder, write precompensation
+ * cylinder, step rate/ECC) don't affect sector addressing and are unused. */
 #define TRS_OMTI_CHARLEN 8
+#define TRS_OMTI_CHAR_CYLHI 0
+#define TRS_OMTI_CHAR_CYLLO 1
+#define TRS_OMTI_CHAR_HEADS 2
 
 #endif /* _TRS_OMTI_H */

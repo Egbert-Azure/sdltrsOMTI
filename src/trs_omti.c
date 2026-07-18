@@ -41,8 +41,8 @@
  *
  * Disk images use the same 256-byte Reed header (reed.h) as trs_hard.c's
  * WD1000/1010 images.  Unlike WD1010, this protocol has no live
- * sector-size register, so the sector size is derived once, at attach
- * time, from the image's file size and its Reed-header geometry.
+ * sector-size register; the OMTI 5010's drives (e.g. the Seagate ST225)
+ * are fixed at 512 bytes/sector, so that size is used unconditionally.
  */
 
 #include <errno.h>
@@ -222,7 +222,12 @@ int trs_omti_in(int port)
       v = state.status;
       break;
     case TRS_OMTI_SELECT:
-      break; /* configuration read, unused by known drivers */
+      /* Not used by the CP/M BIOS driver (hd2.mac), which only ever
+       * writes here to strobe SELECT. But the OMTI boot EPROM reads
+       * this port at reset to detect card presence and expects a
+       * fixed 0xFA signature byte back before it will proceed. */
+      v = 0xfa;
+      break;
     case TRS_OMTI_MASK:
       v = state.mask;
       break;
@@ -392,10 +397,22 @@ static void omti_data_out(int value)
               break;
             }
           }
+        } else if (state.command == TRS_OMTI_SET_CHARACTERISTICS) {
+          /* The guest driver is telling us the real geometry of the
+           * drive it's talking to. Adopt it: the Reed header's cyl/head
+           * values are only a bootstrap guess made at attach time, and
+           * a real OMTI controller is programmed for its drive via this
+           * command, not by inspecting the media. */
+          Drive *d = &state.d[state.lun];
+          int cyls  = (state.buf[TRS_OMTI_CHAR_CYLHI] << 8)
+                    | state.buf[TRS_OMTI_CHAR_CYLLO];
+          int heads = state.buf[TRS_OMTI_CHAR_HEADS];
+
+          if (cyls > 0)
+            d->cyls = cyls;
+          if (heads > 0 && heads <= OMTI_MAXHEADS)
+            d->heads = heads;
         }
-        /* SET DRIVE CHARACTERISTICS data is acknowledged but otherwise
-         * ignored: geometry always comes from the attached image's
-         * Reed header, not from the guest driver. */
         omti_finish(0);
       }
     }
@@ -445,7 +462,14 @@ static int omti_seek(int lun, int cyl, int head, int sector)
 
   if (d->file == NULL && omti_open(lun) != 0) return -1;
 
-  if (head >= d->heads || sector >= d->secs) {
+  /* Some drivers address sectors as a flat index across the whole
+   * cylinder (0..heads*secs-1) rather than pre-splitting into head and
+   * a 0..secs-1 sector-within-track, leaving head at 0 in the CDB and
+   * letting "sector" run past secs-1. Carry any overflow into head here. */
+  head += sector / d->secs;
+  sector %= d->secs;
+
+  if (head >= d->heads) {
     error("omti%d: requested cyl:%d, head:%d, sec:%d (cyls:%d, heads:%d, secs:%d)",
         lun, cyl, head, sector, d->cyls, d->heads, d->secs);
     return -1;
@@ -522,27 +546,11 @@ static int omti_open(int drive)
     goto fail;
   }
 
-  /* No sector-size field exists in this protocol; derive it from the
-   * file's actual data size divided by the total sector count implied
-   * by the geometry above. */
-  {
-    long filesize, data_bytes, total_sectors;
-
-    state.secsize = OMTI_DEFAULT_SECSIZE;
-    if (fseek(d->file, 0, SEEK_END) == 0) {
-      filesize = ftell(d->file);
-      data_bytes = filesize - (long)sizeof(rhh);
-      total_sectors = (long)d->cyls * d->heads * d->secs;
-
-      if (total_sectors > 0 && data_bytes > 0 &&
-          (data_bytes % total_sectors) == 0) {
-        long computed = data_bytes / total_sectors;
-
-        if (computed > 0 && computed <= OMTI_SECBUFSIZE)
-          state.secsize = (int)computed;
-      }
-    }
-  }
+  /* No sector-size field exists in this protocol. The OMTI 5010 and the
+   * ST-506/MFM drives it was paired with (e.g. the Seagate ST225) are
+   * fixed at 512 bytes/sector, so use that rather than trying to infer
+   * a size from the image file. */
+  state.secsize = OMTI_DEFAULT_SECSIZE;
 
   state.status = TRS_OMTI_IDLE;
   return 0;
