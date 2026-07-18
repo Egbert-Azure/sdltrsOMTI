@@ -32,7 +32,7 @@
  * in trs_hard.c (which the Genie IIIs also has, relocated to 0xC8-0xCF).
  *
  * Protocol reverse-engineered from Thomas Holte's CP/M 3.0 BIOS driver
- * (hd2.mac, by Peter Petersen / H. Bernhardt / V. Dose).
+ * (hd2.mac, by Peter Petersen / H. Bernhardt / V. Dose/E. Schroeer).
  */
 
 #ifndef _TRS_OMTI_H
