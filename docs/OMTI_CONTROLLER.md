@@ -92,7 +92,7 @@ There's no interleave or skew reordering, unlike floppy `.dmk` images, which do 
 
 ## FORMAT / WRITE_SECTOR_BUFFER and the fill pattern
 
-Real OMTI format tooling (e.g. Holte's `HDNDF.Z80`) stages a fill byte via `WRITE SECTOR BUFFER` (a normal 6-byte CDB plus one sector of data-out) before issuing `FORMAT TRACK`, which writes that staged pattern to the addressed sector. `state.fillbuf` holds the pattern. It defaults to `0xE5` (CP/M's empty-directory-entry marker) at power-on, so `FORMAT` behaves sanely even if a guest never loads a buffer first, and it's overwritten when `WRITE_SECTOR_BUFFER`'s data-out completes. `FORMAT` writes `state.fillbuf`, not a hardcoded pattern.
+Real OMTI format tooling (e.g. Volker Dose's `HDNDF.Z80`) stages a fill byte via `WRITE SECTOR BUFFER` (a normal 6-byte CDB plus one sector of data-out) before issuing `FORMAT TRACK`, which writes that staged pattern to the addressed sector. `state.fillbuf` holds the pattern. It defaults to `0xE5` (CP/M's empty-directory-entry marker) at power-on, so `FORMAT` behaves sanely even if a guest never loads a buffer first, and it's overwritten when `WRITE_SECTOR_BUFFER`'s data-out completes. `FORMAT` writes `state.fillbuf`, not a hardcoded pattern.
 
 ## Key functions in `trs_omti.c`
 
