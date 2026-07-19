@@ -1,0 +1,96 @@
+# sdltrsOMTI — OMTI hard-disk-boot session status
+
+*Updated 2026-07-19, third session (continuation). Read this whole file before touching code or disk images again.*
+
+## The plan
+
+Get `sdltrsOMTI` (OMTI 5527 SASI/MFM hard-disk-controller emulation, `src/trs_omti.c`/`.h`, ports 0x40-0x43 — corrected from "5010" this session, per the real DISKIO.MAC header comment: "operated with OMTI 5527") to **boot a TCS Genie IIIs directly from an OMTI-emulated hard disk** — genuine boot with zero floppy inserted, using the real boot EPROM (`g3s_hd-omti_bootrom_2764.bin`). Floppy-boot (`egcpm01.dmk`/`egcpm02a.dmk` via the standard ROM) already works fully and is the currently-supported path; this session's goal is the harder zero-floppy EPROM path.
+
+## Current status: ACHIEVED — zero-floppy direct EPROM boot works
+
+**2026-07-19, later same session: direct EPROM boot with zero floppy attached now reaches a working `C>` prompt.** Confirmed on screen: full `"GENIE IIIs SYSTEM / Version b of BIOS (851120) / Thomas Holte @ 1985"` banner, `CP/M V3.0 Loader` banner, all four system components load (`RESBIOS3`, `BNKBIOS3`, `RESBDOS3`, `BNKBDOS3`), `60K TPA`, then `C>`. Zero OMTI errors throughout (`HDV/g3s-omti-WORKING.hdv`, log confirms 0 `ERROR` lines across ~190K log lines).
+
+**Root cause, fully confirmed:** `COPYSYS.COM`'s write of `CPM3.SYS` onto the hard disk (via `SYSTEM.SUB`/`GENCPM`) places the file's *real bytes* at a location inconsistent with the directory entry it creates to describe them (full characterization below, kept for the historical record). This is a `COPYSYS.COM`/`GENCPM` bug (or at least an inconsistency neither this fork nor the original hardware setup ever previously exercised via this exact zero-floppy path) — not a `trs_omti.c` bug. **The fix is a disk-image-level workaround, not a code fix**: take a hard disk built normally via `SYSTEM.SUB` (its boot/loader image at cyl0-1 is written correctly — only `CPM3.SYS`'s placement is buggy), then directly overwrite `CPM3.SYS`/`CCP.COM`'s data and directory entries with cleanly-extracted copies of those exact files from the source floppy (`egcpm02a.dmk`), placed at simple, correctly block-aligned locations with a standard single-entry (`ex=0`) directory encoding.
+
+**Reproducible recipe:** `dmk-working/build_working_hdv.py` — see its own docstring for the exact steps. In short: (1) build a target `.hdv` normally via `egcpm34.dmk`(A:)+`egcpm02a.dmk`(B:)+`SYSTEM.SUB` against the standard ROM, exactly as before; (2) extract `CPM3.SYS`/`CCP.COM` from `egcpm02a.dmk` directly via `cpmextract.py` (NOT from the built hard disk); (3) run `build_working_hdv.py BASE_HDV CPM3_SYS CCP_COM OUT_HDV`; (4) boot `OUT_HDV` with zero floppy via `g3s_hd-omti_bootrom_2764.bin`.
+
+**What's NOT done:** `COPYSYS.COM`/`GENCPM.COM` themselves are proprietary DR binaries with no source — the actual bug inside them (why the directory entry and the real write location disagree) was never root-caused at the Z80-instruction level, only worked around. If a future session wants `SYSTEM.SUB` to produce a directly-bootable disk with no manual patch step, that would require either finding a `COPYSYS`/`GENCPM` invocation quirk that avoids the bug, or live Z80 debugging of those binaries. Not currently planned — the workaround is fully sufficient and repeatable.
+
+## Follow-up fixes after the initial success (same session, same day)
+
+The first working boot had two more issues, both now fixed in `build_working_hdv.py`:
+
+1. **`dir c:` showed garbage entries after the two real files.** Not cosmetic, as earlier (pre-fix) investigation had assumed — it was **real leftover data** in the directory area (blocks 0-15) from the buggy `COPYSYS` write this whole investigation was about (specifically the misplaced `CPM3.SYS` fragment that used to sit at file offset `0x1ed00`, well within the 16-block directory-reserved region). The build script only ever cleaned blocks 16-22 (where it places the real files); it never wiped the rest of the directory region. **Fixed:** the script now wipes the *entire* 16-block directory area to `0xE5` before writing the two real entries. Confirmed: `dir c:` now shows exactly `CPM3.SYS`/`CCP.COM` and nothing else.
+
+2. **D: partition read as garbage, and the boot banner shows `"Seagate ST 225 - 21.4 MB"` twice.** The banner is genuine, unfixable-without-editing-history behavior: `HD2.MAC:330` has `iniok: db 'Seagate ST 225 - 21.4 MB'`, a single hardcoded string printed once per successfully-initialized logical drive (once for C:, once for D:), never parameterized per-partition size in Holte's original 1990s source — real hardware would show the exact same banner. **D: was simply out of scope of the original working `.hdv`** (a 1MB-truncated test image, sufficient for C: but D:'s region — `DPBHD2` in `DISKIO1.MAC` has `OFF=307` cylinders, right where C: naturally ends — didn't physically exist in the file, so reads past EOF came back as zero bytes, which CP/M misreads as directory garbage rather than empty). **Fixed:** the build script now always extends the output to the full 615-cylinder (`~21.4MB`) disk size, padded with `0xE5`. D: needs no files placed on it (it's just a blank data partition) — confirmed `dir d:` now correctly shows `"No File"`.
+
+Both fixes verified together in one clean boot: `dir c:` shows only the two real files, `dir d:` shows `"No File"`, zero OMTI errors. `HDV/g3s-omti-WORKING.hdv` was rebuilt with both fixes and is the current canonical working image (21,412,096 bytes, full size).
+
+## Real end-to-end confirmation: interactive file write
+
+After the fixes above, booted `HDV/g3s-omti-WORKING.hdv` with `dmk-working/egcpm02a.dmk` also attached as A: (same zero-floppy-capable raw EPROM boot, floppy just added for convenience — the direct-hard-disk-boot process itself still used zero floppy). **The user then interactively used `COPY.COM` (not `PIP.COM`, which isn't on this floppy) to copy a real file from A: to C:, confirmed written successfully** — "wrote the first file on c:". This is genuine, hands-on, interactive proof the whole chain works: boot, BDOS, directory allocation, and file write all functioning correctly on a live OMTI hard disk, not just a scripted/automated test. `HDV/g3s-omti-WORKING.hdv` now contains that real file — it's a live disk, not a pristine template; back it up before further experimentation if you want to preserve a clean baseline.
+
+**User-facing usage guide:** `HOWTO.md` (repo root) — build instructions, which `.hdv` to use, boot commands (direct hard-disk and floppy+hard-disk), `COPY.COM` usage, GUI hard-disk management, and the known-quirks list (banner text, D: "No File"). Written for actually *using* the emulator day to day, separate from this file's role as the debugging-session history.
+
+## Historical record: how the bug was characterized (kept for context, already resolved above)
+
+Direct EPROM boot originally got all the way through `HDBOOTER` relocation, real `CPMLDR` execution (prints its genuine "CP/M V3.0 Loader / Copyright (C) 1982, Digital Research" banner), correctly located `CPM3.SYS`'s directory entry, and successfully read whichever blocks its directory entry pointed to (zero OMTI-level I/O errors) — but failed with **`CPMLDR error: failed to read CPM3.SYS`**. The investigation below narrowed this down to a `COPYSYS.COM` bug and is preserved as-is; see the "ACHIEVED" section above for the resolution.
+
+## Two real emulator bugs found and fixed this session (both committed, see commit `283601dc "OMTI routine bug"`)
+
+1. **`SET DRIVE CHARACTERISTICS` must NOT override addressing geometry** (this reverted an earlier, overly-broad fix from a prior session). The raw boot EPROM sends a stale 612-cyl/2-head characteristics block automatically at startup, before ever touching the disk; letting it overwrite `d->cyls`/`d->heads` corrupted every subsequent seek. Real OMTI hardware doesn't use this field to restrict addressable heads (confirmed by the user from real hardware experience). Current behavior: acknowledged (`omti_finish(0)`) but geometry stays keyed to the attached image's own Reed-header values.
+
+2. **`FORMAT TRACK` (0x04) always wrote zeros instead of the guest's fill pattern, and `WRITE SECTOR BUFFER` (0x0F) — the command real formatting tools use to stage that fill pattern — wasn't implemented at all** (fell through to `default:`, logged "unknown command 0x0F", returned an error to the guest). This was found when trying to run the real `HDNDF.Z80`/`HDNDF.COM` formatter (per the user's correction that the disk was never properly formatted/initialized) — it would have failed immediately at its `WRITE SECTOR BUFFER` step. Fixed: added `TRS_OMTI_WRITE_SECTOR_BUFFER` (0x0f), a new persistent `state.fillbuf` (defaults to `0xE5`, CP/M's empty-directory marker, on poweron), and `FORMAT` now writes `state.fillbuf` instead of a hardcoded zero buffer. This is a genuine, correct improvement to the OMTI emulation regardless of the outcome of the CPM3.SYS investigation below.
+
+Both fixes are already committed. **Do not re-revert the `SET CHARACTERISTICS` behavior** — that was tried twice across sessions and confirmed wrong both times.
+
+## Confirmed-correct geometry and DPB fields (settled, do not re-litigate)
+
+- **615 cyl / 4 heads / 17 sectors/track / 512 bytes/sector** — confirmed by three independent period sources (`hddtbl.asm`, `hd2.mac`'s `fdhead`, `HDNDF.Z80`'s header comment) and matches the actual compiled driver on the disk currently in use.
+- **`OFF` (reserved system tracks) = 2, for BOTH the boot-time DPB (`DPB0` in `LDRBIOHD.MAC`) and the runtime DPB (`DPBHD0` in `DISKIO1.MAC`).** This reverses an earlier session's conclusion (the previous session had changed boot-time `OFF` from 2 to 0, which was WRONG — it happened to produce a different, seemingly-more-specific CPMLDR error message that looked like progress but wasn't). Confirmed correct via **direct raw-byte inspection**: `CPM3.SYS`/`CCP.COM`'s real, valid directory entries live at file offset `0x11100`, exactly matching cylinder 2 (`256 + 2×34816`) — i.e. `OFF=2`. With boot-time `OFF` wrongly set to 0, CPMLDR scanned cylinders 0-1 (pure boot/loader code, no directory) and never found the entry at all (`"failed to open"`). With `OFF=2` restored, CPMLDR finds the entry immediately (reads exactly one directory sector, then jumps straight to the computed data-block address) — real, confirmed progress.
+- **`DSM`/`DRM` in boot-time `DPB0`** also needed correcting from stale values (2591/1024) to match the runtime DPB (5226/2047) — this part of the prior session's fix was correct and still stands.
+- **Important methodology note:** boot-time `DPB0`'s field values as compiled on disk **differ from what's in the `.MAC` *text* source** until the text source itself is patched — `SYSTEM.SUB` reassembles `LDRBIOHD.MAC` fresh via M80 on every rebuild, so a binary-only patch to an already-compiled `.REL`/boot-image copy gets silently discarded on the next rebuild. All DPB0 field fixes must be applied as **ASCII text edits within the `.MAC` source file's own on-disk bytes** (via `cpmextract.py`'s `CpmDisk`/`DPB01`/`decode_directory` helpers to locate the exact physical DMK sector, then a CRC-16/CCITT-safe patch, seed `0xCDB4`, computed over the DAM byte + 512 data bytes) — not to any already-compiled binary elsewhere on the disk. This was the source of a wasted round this session (a binary-only `OFF` revert silently had no effect on the next rebuild).
+
+## The repo's `src ST 225/egcpm001/` reference folder is not fully trustworthy
+
+Confirmed this session: `src ST 225/egcpm001/HD2.MAC` (the repo's reference copy) has `fdhead: cp 26` (wrong), while the **actual compiled `HD2.MAC` on the working disk** (extracted live via `cpmextract.py`) has `cp 17` (correct, matches `LDRBIOHD.MAC`). The repo reference folder was consolidated from a different disk/version than what's actually being tested. **Always re-verify anything precision-critical by extracting live from the actual working DMK** (`cpmextract.py path/to/egcpm02a.dmk -o outdir`), not by trusting the repo's `src ST 225/egcpm001/` copies.
+
+## The unresolved core mystery: CPM3.SYS's real bytes don't live where its own directory entry says
+
+This is the actual current blocker, fully characterized but not fixed:
+
+- `CPM3.SYS`'s directory entry (correctly found by CPMLDR once `OFF=2` was restored) declares block pointers `[16,17,18,19,20,21]`.
+- Block 16 (file offset `0x21100`–`0x22100`) is **always, 100% reproducibly, entirely blank (`0xE5`)** — confirmed across multiple independent rebuilds, regardless of whether the target disk was hand-filled with `0xE5` or formatted with the real `HDNDF` (after fixing the FORMAT bug above). It is never written to.
+- The real `SYSTEM.SUB`/`COPYSYS`/`GENCPM` write trace shows the actual `CPM3.SYS` payload landing in **two places**: a small 4096-byte chunk at file offset `0x1ed00` (NOT block-aligned — starts 3072 bytes into block 13) that contains `CPM3.SYS`'s genuine header/signature (`\xfe\x0c\xe0?\x00\xf8...` followed by `"Copyright (C) 1982, Digital Research"`, verified byte-for-byte structurally matching the floppy's own reference `CPM3.SYS`), and a large, **cleanly block-aligned** run from `0x22100` (exactly block 17) through roughly `0x26d00` (within block 21).
+- **Attempted workaround:** patched the directory entry's block-pointer list from `[16..21]` to `[17..21]` (dropping the erroneous leading block16) directly on `HDV/g3s-omti-fixed5.hdv`. This worked exactly as intended at the mechanical level — CPMLDR now jumps straight to block 17 and successfully reads all 5 blocks (40 sectors, zero OMTI errors), covering the entire dense-content region. **It still fails with the same "failed to read CPM3.SYS" error.** Block 17's first bytes are all zeros, not the "Copyright..." header, so block 17 is mid-file, not the true start — and the true start (`0x1ed00`) is fundamentally non-block-aligned, meaning **no standard CP/M directory entry can ever correctly describe this file's real location.**
+- This strongly suggests the bug is inside `COPYSYS.COM` itself (proprietary, no source) — some inconsistency between where it writes `CPM3.SYS`'s bytes and how it computes the directory entry describing them — not something fixable from the emulator side or by further disk-image patching.
+- **Next diagnostic step, not yet attempted:** live Z80 breakpoint tracing inside `CPMLDR.COM` (via `zbx`, e.g. `break <addr>` at its directory-search/open routine) to see exactly what validation causes "failed to read" and whether there's a smarter workaround (e.g. maybe CPMLDR doesn't actually require the file to start at the very first block it reads — worth checking what's really being validated before concluding this is unfixable).
+
+## What works (validated)
+
+- **Direct hard-disk boot, zero floppy, raw EPROM (`g3s_hd-omti_bootrom_2764.bin`) → working `C>` prompt. ACHIEVED 2026-07-19.** See `HDV/g3s-omti-WORKING.hdv` and `dmk-working/build_working_hdv.py`.
+- Floppy-boot (`egcpm01.dmk`/`egcpm02a.dmk` via the standard ROM `g3s_8501004_bootrom_2732.bin`) → real `hd2.mac` driver → full OMTI read/write round-trip (`dir c:`, `PIP`, read-back all confirmed).
+- `egcpm02a.dmk`'s own `SYSTEM.SUB` (real, not hand-typed) builds and installs a working boot/loader image (cyl0-1) onto a target OMTI disk cleanly and repeatably (94 write commands, 0 errors, every time) — this part of `COPYSYS`'s job is correct; only its `CPM3.SYS` placement is buggy (see above).
+- Alt-H GUI screen shows `omti0`/`omti1` status correctly.
+
+## Leads from the user, resolved or still open
+
+1. **The controller is an OMTI 5527, not "OMTI 5010"** — confirmed directly from the real `DISKIO.MAC` header comment ("Version for Egbert Schröer hard disk Seagate ST225, 21.4 MB, ST412 interface, MFM format, operated with OMTI 5527"). Corrected throughout (`trs_omti.c`/`.h`, `README.md`, `CLAUDE.md`, `OMTI_CONTROLLER.md`, memory). **Resolved.**
+
+2. **The original archived DMKs having a historically-working `$TEMP$`/`CPM3.SYS`** — this lead is what actually led to the fix above, though not quite as originally framed: rather than a leftover historical `$TEMP$`, it was **cleanly re-extracting `CPM3.SYS`/`CCP.COM` from the source floppy `egcpm02a.dmk` itself** (via `cpmextract.py`, bypassing `COPYSYS`'s buggy hard-disk write) and hand-placing them correctly that did it. **Resolved / superseded by the fix above.**
+
+3. **`SYSTEM.SUB`'s last line `copy a:ccp.com c:`** — not separately investigated; moot now since `CCP.COM` is pulled directly from `egcpm02a.dmk` by the new build script instead. **Not investigated, no longer blocking.**
+
+4. **Possible cylinder-count typo in `"Installation des Holte CPM-Plus.md"`** — not investigated this session. Still worth a look since geometry (615 cyl) underpins everything, but the direct-boot goal no longer depends on resolving it first. **Still open, lower priority now.**
+
+## Practical notes for resuming
+
+- **The working recipe:** `dmk-working/build_working_hdv.py` (see its docstring) — build a target `.hdv` normally via `SYSTEM.SUB`, extract `CPM3.SYS`/`CCP.COM` fresh from `egcpm02a.dmk` via `cpmextract.py`, then run the script to produce a directly-bootable image.
+- **`HDV/g3s-omti-WORKING.hdv`** is the confirmed-working image from this session (gitignored, like all of `HDV/`, full 615-cylinder/21.4MB size) — boots to `C>` with zero floppy via `g3s_hd-omti_bootrom_2764.bin`, `dir c:` shows only the two real files, `dir d:` shows `"No File"` (a valid empty second partition).
+- **Working DMK copies persisted at `dmk-working/egcpm02a.dmk` and `dmk-working/egcpm34.dmk`** in the repo root (gitignored) — have the `OFF=2`/`DSM`/`DRM` `LDRBIOHD.MAC` text-level fixes already applied. The session scratchpad these came from is ephemeral and does NOT survive between sessions — always work from these repo-root copies.
+- **`egcpm34.dmk`** is the safe bootstrap floppy (doesn't auto-try booting C:); **`egcpm02a.dmk`** has the real `SYSTEM.SUB`. Boot with `egcpm34.dmk` on disk0, `egcpm02a.dmk` on disk1 (B:), the standard ROM `g3s_8501004_bootrom_2732.bin`, and a target `.hdv` on `-omti0`, to (re)build the boot-image base for `build_working_hdv.py`.
+- To build a fresh blank target for the `SYSTEM.SUB` base-image step: 256-byte Reed header (reuse from any existing `g3s-omti-*.hdv`) + `0xE5`-filled data area (1MB is enough headroom for this intermediate step — `build_working_hdv.py` extends the *final* output to the full 615-cylinder/21.4MB size itself, needed for D: to work).
+- Debug everything with `-io 0xc` and `grep "trs_omti: command\|ERROR"` on the log.
+- `cpmextract.py` (`~/Documents/GitHub/cpmextract/cpmextract.py`) can extract files live from any DMK — use this instead of trusting the repo's `src ST 225/egcpm001/` reference copies when precision matters.
+- **Never attach a file directly from `~/Documents/GitHub/GenieIIIs/`** — always work from copies (`dmk-working/` in the repo root, or the scratchpad for throwaway tests).
+- Full byte-level derivations and the complete bug list: `boot_recipe.md`, `omti_protocol_bugs.md`, `omti_disk_geometry.md` memory files (updated to match this file).
