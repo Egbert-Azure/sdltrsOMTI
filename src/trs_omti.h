@@ -26,7 +26,7 @@
  */
 
 /*
- * Emulation of the OMTI 5010-class SASI/MFM hard disk controller used
+ * Emulation of the OMTI 5527-class SASI/MFM hard disk controller used
  * in the TCS Genie IIIs, mapped at ports 0x40-0x43.  This is a separate,
  * independent interface from the Western Digital WD1000/WD1010 emulated
  * in trs_hard.c (which the Genie IIIs also has, relocated to 0xC8-0xCF).

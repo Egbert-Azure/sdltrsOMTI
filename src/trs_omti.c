@@ -26,7 +26,7 @@
  */
 
 /*
- * Emulation of the OMTI 5010-class SASI/MFM hard disk controller used
+ * Emulation of the OMTI 5527-class SASI/MFM hard disk controller used
  * in the TCS Genie IIIs, mapped at ports 0x40-0x43.  This is a separate,
  * independent hard disk interface from the Western Digital WD1000/WD1010
  * emulated in trs_hard.c (which the Genie IIIs also supports, relocated
@@ -41,7 +41,7 @@
  *
  * Disk images use the same 256-byte Reed header (reed.h) as trs_hard.c's
  * WD1000/1010 images.  Unlike WD1010, this protocol has no live
- * sector-size register; the OMTI 5010's drives (e.g. the Seagate ST225)
+ * sector-size register; the OMTI 5527's drives (e.g. the Seagate ST225)
  * are fixed at 512 bytes/sector, so that size is used unconditionally.
  */
 
@@ -555,7 +555,7 @@ static int omti_open(int drive)
     goto fail;
   }
 
-  /* No sector-size field exists in this protocol. The OMTI 5010 and the
+  /* No sector-size field exists in this protocol. The OMTI 5527 and the
    * ST-506/MFM drives it was paired with (e.g. the Seagate ST225) are
    * fixed at 512 bytes/sector, so use that rather than trying to infer
    * a size from the image file. */

@@ -1,10 +1,10 @@
-# OMTI 5010 controller emulation — how it works
+# OMTI 5527 controller emulation — how it works
 
-This describes `src/trs_omti.c`/`trs_omti.h`, the OMTI 5010-class SASI/MFM hard-disk-controller emulation added by this fork. If you're debugging a boot/read/write problem, start here to understand the protocol, then see `SESSION_STATUS.md` for the current investigation and `omti_protocol_bugs.md`/`omti_disk_geometry.md` (Claude memory) for the specific bugs already found and fixed.
+This describes `src/trs_omti.c`/`trs_omti.h`, the OMTI 5527-class SASI/MFM hard-disk-controller emulation added by this fork. If you're debugging a boot/read/write problem, start here to understand the protocol, then see `SESSION_STATUS.md` for the current investigation and `omti_protocol_bugs.md`/`omti_disk_geometry.md` (Claude memory) for the specific bugs already found and fixed.
 
 ## What it emulates
 
-A TCS Genie IIIs can have an OMTI 5010 SASI/MFM hard-disk controller card (typically driving a Seagate ST225 or similar), mapped at Z80 I/O ports **0x40-0x43**. This is a completely separate, independent interface from the Western Digital WD1000/1010 controller emulated in `trs_hard.c` (ports 0xC8-0xCF, or relocated equivalents) — the two share no state, no drive numbering, and a Genie IIIs can have both attached simultaneously. The protocol here was reverse-engineered from Thomas Holte's real CP/M 3.0 BIOS driver (`hd2.mac`) and boot-loader source (`ldrbiohd.mac`), not from official OMTI documentation.
+A TCS Genie IIIs can have an OMTI 5527 SASI/MFM hard-disk controller card (typically driving a Seagate ST225 or similar), mapped at Z80 I/O ports **0x40-0x43**. This is a completely separate, independent interface from the Western Digital WD1000/1010 controller emulated in `trs_hard.c` (ports 0xC8-0xCF, or relocated equivalents) — the two share no state, no drive numbering, and a Genie IIIs can have both attached simultaneously. The protocol here was reverse-engineered from Thomas Holte's real CP/M 3.0 BIOS driver (`hd2.mac`) and boot-loader source (`ldrbiohd.mac`), not from official OMTI documentation.
 
 ## Port map
 
@@ -74,9 +74,9 @@ Anything else logs `"trs_omti: unknown command 0x%02X"` and returns an error sta
 
 ## Geometry: comes from the disk image, not from the guest
 
-This is a common point of confusion, so it's worth stating plainly: **`cyls`/`heads`/`secs` are read once from the attached `.hdv` file's Reed header at open time (`omti_open()`) and never changed afterward**, even though `SET DRIVE CHARACTERISTICS` looks like it should be able to reprogram them. An earlier version of this emulation let that command overwrite the live geometry, reasoning that real OMTI hardware is "programmed" for its drive this way — this was wrong and got reverted (twice, across two sessions) because the real boot EPROM sends a stale, wrong characteristics block automatically at every startup, and letting it override geometry corrupted every subsequent seek. A real OMTI 5010 drive wired with N heads responds to CDB head values 0..N-1 regardless of what a boot ROM claims here; this field is more likely for write-precompensation/step-rate configuration, not addressable-head count. **Do not resurrect this.**
+This is a common point of confusion, so it's worth stating plainly: **`cyls`/`heads`/`secs` are read once from the attached `.hdv` file's Reed header at open time (`omti_open()`) and never changed afterward**, even though `SET DRIVE CHARACTERISTICS` looks like it should be able to reprogram them. An earlier version of this emulation let that command overwrite the live geometry, reasoning that real OMTI hardware is "programmed" for its drive this way — this was wrong and got reverted (twice, across two sessions) because the real boot EPROM sends a stale, wrong characteristics block automatically at every startup, and letting it override geometry corrupted every subsequent seek. A real OMTI 5527 drive wired with N heads responds to CDB head values 0..N-1 regardless of what a boot ROM claims here; this field is more likely for write-precompensation/step-rate configuration, not addressable-head count. **Do not resurrect this.**
 
-Sector size is always `OMTI_DEFAULT_SECSIZE` (512 bytes) — OMTI 5010 + ST-506/MFM drives (Seagate ST225 etc.) are natively 512 bytes/sector, unlike WD1000's live sector-size register.
+Sector size is always `OMTI_DEFAULT_SECSIZE` (512 bytes) — OMTI 5527 + ST-506/MFM drives (Seagate ST225 etc.) are natively 512 bytes/sector, unlike WD1000's live sector-size register.
 
 ## Disk image format
 
