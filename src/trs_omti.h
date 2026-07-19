@@ -79,6 +79,7 @@ extern void  trs_omti_getgeometry(int unit, int *cyls, int *head, int *secs);
 #define TRS_OMTI_WRITE           0x0a
 #define TRS_OMTI_SEEK            0x0b
 #define TRS_OMTI_SET_CHARACTERISTICS 0x0c
+#define TRS_OMTI_WRITE_SECTOR_BUFFER 0x0f
 
 /* Final status byte (read from TRS_OMTI_PORT once status is 0xCF) */
 #define TRS_OMTI_ST_ERROR 0x02

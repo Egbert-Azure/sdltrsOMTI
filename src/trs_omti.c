@@ -93,6 +93,7 @@ typedef struct {
   int lun;
 
   Uint8 buf[OMTI_SECBUFSIZE];
+  Uint8 fillbuf[OMTI_SECBUFSIZE];
   int bytesdone;
   int datalen;
   int secsize;
@@ -153,6 +154,11 @@ void trs_omti_init(int poweron)
 
     state.present = 0;
     state.mask = 0;
+    /* CP/M's directory-empty marker; real OMTI format tooling (e.g.
+     * HDNDF.Z80) loads this same byte via WRITE SECTOR BUFFER before
+     * issuing FORMAT, but this default lets FORMAT behave sanely even
+     * if a guest formats without an explicit buffer load first. */
+    memset(state.fillbuf, 0xe5, sizeof(state.fillbuf));
 
     for (i = 0; i < TRS_OMTI_MAXDRIVES; i++) {
       state.d[i].writeprot = 0;
@@ -330,8 +336,7 @@ static void omti_command(void)
     if (omti_seek(state.lun, cyl, head, sector) == 0) {
       FILE *f = state.d[state.lun].file;
 
-      memset(state.buf, 0, sizeof(state.buf));
-      if (f && fwrite(state.buf, 1, state.secsize, f) != (size_t)state.secsize) {
+      if (f && fwrite(state.fillbuf, 1, state.secsize, f) != (size_t)state.secsize) {
         if (errno) {
           file_error("formatting omti%d", state.lun);
           omti_finish(-1);
@@ -346,6 +351,12 @@ static void omti_command(void)
 
   case TRS_OMTI_SET_CHARACTERISTICS:
     state.datalen = TRS_OMTI_CHARLEN;
+    state.phase = OMTI_PH_DATA_OUT;
+    state.status = TRS_OMTI_DATA_OUT;
+    break;
+
+  case TRS_OMTI_WRITE_SECTOR_BUFFER:
+    state.datalen = state.secsize;
     state.phase = OMTI_PH_DATA_OUT;
     state.status = TRS_OMTI_DATA_OUT;
     break;
@@ -397,22 +408,20 @@ static void omti_data_out(int value)
               break;
             }
           }
-        } else if (state.command == TRS_OMTI_SET_CHARACTERISTICS) {
-          /* The guest driver is telling us the real geometry of the
-           * drive it's talking to. Adopt it: the Reed header's cyl/head
-           * values are only a bootstrap guess made at attach time, and
-           * a real OMTI controller is programmed for its drive via this
-           * command, not by inspecting the media. */
-          Drive *d = &state.d[state.lun];
-          int cyls  = (state.buf[TRS_OMTI_CHAR_CYLHI] << 8)
-                    | state.buf[TRS_OMTI_CHAR_CYLLO];
-          int heads = state.buf[TRS_OMTI_CHAR_HEADS];
-
-          if (cyls > 0)
-            d->cyls = cyls;
-          if (heads > 0 && heads <= OMTI_MAXHEADS)
-            d->heads = heads;
+        } else if (state.command == TRS_OMTI_WRITE_SECTOR_BUFFER) {
+          memcpy(state.fillbuf, state.buf, state.secsize);
         }
+        /* SET DRIVE CHARACTERISTICS is acknowledged but does not change
+         * addressing geometry: on real hardware this configures things
+         * like write precompensation/step rate for the attached drive,
+         * not which heads are reachable. A drive physically wired with
+         * N heads still responds to CDB head values 0..N-1 regardless of
+         * what a boot ROM declares here -- confirmed by the real boot
+         * EPROM sending a stale 2-head/612-cyl characteristics block
+         * (leftover from older, smaller hardware) yet still correctly
+         * booting a real 4-head/615-cyl ST225 on actual hardware. File
+         * offset math stays keyed to the attached image's own geometry
+         * (from its Reed header), which is the actual physical disk. */
         omti_finish(0);
       }
     }
@@ -603,6 +612,7 @@ void trs_omti_save(FILE *file)
   trs_save_uint8(file, &state.command, 1);
   trs_save_int(file, &state.lun, 1);
   trs_save_uint8(file, state.buf, OMTI_SECBUFSIZE);
+  trs_save_uint8(file, state.fillbuf, OMTI_SECBUFSIZE);
   trs_save_int(file, &state.bytesdone, 1);
   trs_save_int(file, &state.datalen, 1);
   trs_save_int(file, &state.secsize, 1);
@@ -632,6 +642,7 @@ void trs_omti_load(FILE *file)
   trs_load_uint8(file, &state.command, 1);
   trs_load_int(file, &state.lun, 1);
   trs_load_uint8(file, state.buf, OMTI_SECBUFSIZE);
+  trs_load_uint8(file, state.fillbuf, OMTI_SECBUFSIZE);
   trs_load_int(file, &state.bytesdone, 1);
   trs_load_int(file, &state.datalen, 1);
   trs_load_int(file, &state.secsize, 1);
