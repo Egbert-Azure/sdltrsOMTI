@@ -1,0 +1,232 @@
+	title	'WD1000 hard-disk handler'
+
+;************************************************
+;*	W D 1 0 0 0 . M A C	Version : 1.0	*
+;*	Added for sdltrsOMTI trs_hard.c        *
+;*	emulation (WD1000/1010, ports C8-CFh)  *
+;*	Two drives: relative drive 0 = E:,	*
+;*	relative drive 1 = F:			*
+;************************************************
+
+; CP/M-80 Version 3     ---  Modular BIOS  ---
+; Same calling convention as hd2.mac (see DISKIO1.MAC / DTBL.ASM):
+;	 relative drive number	in @rdrv	 (8 bits)
+;	 absolute drive number	in @adrv	 (8 bits)
+;	 disk transfer address	in @dma		(16 bits)
+;	 disk transfer bank	in @dbnk	 (8 bits)
+;	 disk track address	in @trk		(16 bits) -- cylinder
+;	 disk sector address	in @sect	(16 bits) -- flat 0..(heads*secs-1)
+;	 pointer to XDPH	in <DE>
+; return error code in <A>, 0 = ok
+
+true	equ	-1
+false	equ	 0
+bel     equ    07h
+sub     equ    1AH
+esc     equ    1BH
+
+	public	wd1000wr,wd1000rd,wd1000lg,wd1000in,wd1init
+
+; Variables containing parameters passed by BDOS
+
+	external	@adrv,@rdrv,@dbnk,@dma,@trk,@sect
+	external	@cbnk,@erdme,?pderr
+	external        ?bank	        	;log. Bank (in A) einschalten
+
+; Utility routines in standard BIOS
+
+	external	?pmsg		; print message @<HL> up to 0,
+	            			; saves <BC> & <DE>
+        external        ?conin,?cono    ; console input and output
+        external        ?const          ; get console status
+
+; WD1000/1010 register addresses (Tandy Model I/III/4 hard disk controller,
+; sdltrsOMTI's trs_hard.c). Two physical drives (hard0/hard1), 4 heads,
+; 9 sectors/track, 256 bytes/sector -- matches the .hdv images' own Reed
+; headers (2460 cyl, 4 heads, 36 sectors/cylinder = 9/track, 256B/sector).
+
+wdctrl	equ	0c1h		; control register (software reset/enable)
+wdport	equ	0c8h		; data register (base)
+wdsecc	equ	wdport+2	; sector count register
+wdsecn	equ	wdport+3	; sector number register
+wdcylo	equ	wdport+4	; cylinder low byte
+wdcyhi	equ	wdport+5	; cylinder high byte
+wdsdh	equ	wdport+6	; size/drive/head register
+wdstat	equ	wdport+7	; status register (read)
+wdcmd	equ	wdport+7	; command register (write)
+
+wdcmd_read  equ	020h
+wdcmd_write equ	030h
+
+wdst_busy equ	080h
+wdst_drq  equ	008h
+wdst_err  equ	001h
+
+wsecpertrk equ	9		; sectors/track for this geometry
+
+        .z80
+	cseg			; residente Ruinen zum
+  				; Verholen von/zu Banks
+
+wdrd:	ld	hl,(@dma)	; set buffer address
+	ld	a,(@dbnk)
+	call	?bank
+	ld	c,wdport	; get wd data port address
+	ld	b,0		; 256 bytes (B wraps 0->256 for INIR)
+	inir			; pull the whole 256-byte sector in
+	jr	wdtermcmd
+
+wdwr:	ld	hl,(@dma)	; set buffer address
+	ld	a,(@dbnk)
+	call	?bank
+	ld	c,wdport	; get wd data port address
+	ld	b,0		; 256 bytes
+	otir			; push the whole 256-byte sector out
+	jr	wdtermcmd
+
+wdtermcmd:
+	xor	a		; back to bank 0 before touching the
+	call	?bank		; common BDOS-facing error path
+	ei
+	in	a,(wdstat)	; get final status
+	and	wdst_err	; test error bit
+	ret	z		; A=0, no error
+
+	ld	hl,wdmsg1	; else print hard-disk error
+	call	dskerr
+	ld	a,1
+	ret
+
+	dseg
+
+; harddisk READ and WRITE entry points -- see header comment for the
+; calling convention (identical to hd2.mac's hdread/hdwrit).
+
+wd1000rd:
+	ld	hl,readmsg	; point at ' Read '
+	call	wdrw_common	; select drive/head/cyl/sector
+	di			; disable interrupts
+	ld	a,wdcmd_read
+	out	(wdcmd),a	; issue READ SECTOR
+wrd1:	in	a,(wdstat)	; get status
+	bit	7,a		; still busy ?
+	jr	nz,wrd1		; wait
+	bit	3,a		; data request set ?
+	jr	z,wrd1		; wait until it is
+	jp	wdrd		; go pull the sector in
+
+wd1000wr:
+	ld	hl,writemsg	; point to ' Write '
+	call	wdrw_common
+	di			; disable interrupts
+	ld	a,wdcmd_write
+	out	(wdcmd),a	; issue WRITE SECTOR
+wwr1:	in	a,(wdstat)	; get status
+	bit	7,a		; still busy ?
+	jr	nz,wwr1		; wait
+	bit	3,a		; data request set ?
+	jr	z,wwr1		; wait until it is
+	jp	wdwr		; go push the sector out
+
+wd1000in:
+	xor	a
+	out	(wdctrl),a	; clear control register
+	ld	a,010h		; software reset bit
+	out	(wdctrl),a
+	ld	a,008h		; device enable bit
+	out	(wdctrl),a
+	ld	hl,iniok	; print init o. k. (no real handshake to
+	jp	print		; wait for -- the emulation resets synchronously)
+
+wd1init: ret			; dummy vector, matches hd2.mac's hd1ini
+wd1000lg: ret			; dummy vector, hard-disk login
+
+;	select drive/head from @rdrv, cylinder/sector from @trk/@sect,
+;	and write the WD1000 registers ready for a READ/WRITE command.
+
+wdrw_common:
+	ld	(wdc_rw),hl	; save name of operation for error messages
+
+	ld	a,(@rdrv)	; 0 = E:, 1 = F: (see DISKIO1.MAC XDPH entries)
+	and	1
+	rlca			; move drive # into bits 4-3 (ddd -> 000dd000... )
+	rlca
+	rlca
+	ld	(wdsdhval),a	; stash drive bits, head gets or'd in below
+
+	ld	bc,(@trk)	; cylinder number (0-2459, fits in 16 bits)
+	ld	a,c
+	out	(wdcylo),a
+	ld	a,b
+	out	(wdcyhi),a
+
+	ld	a,(@sect)	; flat sector # (0..(heads*secpertrk-1))
+	ld	b,0		; head accumulator
+wfdhd:	cp	wsecpertrk
+	jr	c,wfd0
+	sub	wsecpertrk
+	inc	b
+	jr	wfdhd
+wfd0:	out	(wdsecn),a	; sector-within-track
+
+	ld	a,(wdsdhval)	; drive bits
+	or	b		; | head bits (0-3, fits low 3 bits)
+	out	(wdsdh),a	; size=00 (256B), ecc=0, drive, head
+
+	ld	a,1
+	out	(wdsecc),a	; sector count = 1
+	ret
+
+; suppress error message if BDOS is returning errors to application...
+; (identical structure to hd2.mac's dskerr, just distinct labels so both
+; modules can link into the same BNKBIOS3 without symbol clashes)
+
+dskerr:
+	ld	a,(@erdme)
+	cp	0ffh
+	jr	nz,wpr_err
+	pop	af		; correct stack
+	ld	a,1		; get hard-error code
+	ei			; enable interrupts
+	ret			; and return to bdos
+
+wpr_err: call	?pderr		; print message header
+        ld      hl,(wdc_rw)     ; READ oder WRITE
+        call    ?pmsg
+        call    wfrageab       ; Eingabe holen
+        ld      hl,wmsgend      ; Statuszeile aus
+print:  call    ?pmsg
+	ret
+
+; get console input, echo it and shift to uppercase
+
+wfrageab: call ?const
+          or   a
+          jr   z,wistda
+          call ?conin
+          jr   wfrageab
+wistda:   call ?conin
+          push af
+          ld   c,a
+          call ?cono
+          pop  af
+          cp   'A'
+          ret  c
+          and  0dfh
+          ret
+
+;  wd1000 driver data area
+wdsdhval: db	0		; drive-select bits, staged before OR-ing head in
+
+;	error message components
+wdc_rw:		dw	readmsg
+readmsg:	db	', Read ',0
+writemsg:	db	', Write ',0
+wdmsg1:		db	7
+		db	'Hard Disk Error'
+		db	0
+iniok:		db	'Western Digital WD1000 - 21.6 MB'
+		db	13,10,0
+wmsgend:        db      sub,esc,'D',0
+
+	end
