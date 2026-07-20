@@ -4,8 +4,17 @@ Builds a working direct-EPROM-bootable OMTI hard-disk image (.hdv).
 
 Root cause this works around: COPYSYS.COM's own write of CPM3.SYS onto the
 hard disk (via SYSTEM.SUB/GENCPM) places the file's real bytes at a location
-inconsistent with the directory entry it creates for it (see SESSION_STATUS.md
-and omti_protocol_bugs.md for the full characterization). This script instead
+inconsistent with the directory entry it creates for it (see omti_protocol_bugs.md
+memory for the full characterization). Likely explanation, confirmed by the
+original author's own comment in HDBOOTER.MAC: COPYSYS writes the hard disk's
+system area as if it had 20-sector (128-byte-unit-80) floppy-style tracks --
+HDBOOTER.MAC's own cold-boot read loop has to copy that same wrong assumption
+(inherited verbatim from BOOTER.MAC, the floppy loader, where 20 sectors/track
+is actually correct) just to read back what COPYSYS wrote. If COPYSYS uses
+this same wrong per-track boundary for CPM3.SYS's raw bytes too, that would
+produce exactly the kind of non-block-aligned drift this script works around.
+COPYSYS.COM itself is a proprietary compiled binary (no source), so this was
+never fixed at the root, only worked around here. This script instead
 takes a hard disk that already has a *correctly-built boot/loader image*
 (cyl0-cyl1, written correctly by COPYSYS — that part isn't buggy) and replaces
 just the CPM3.SYS/CCP.COM data and their directory entries with cleanly
