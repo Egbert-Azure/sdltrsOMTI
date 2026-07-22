@@ -36,7 +36,7 @@ I needed to do this
 
 ## 3. One-click launch
 
-Double-click `sdl2trs-omti.command` (repo root) in Finder. It boots straight into `HDV/g3s-omti-WORKING.hdv` with no floppy and no flags to remember, running the section 4 command with everything filled in. If your ROM archive isn't at the default path it checks (`~/Documents/GitHub/GenieIIIs/rom/...`), edit `ROM_PATH` near the top of the file.
+Double-click `sdl2trs-omti.command` (repo root) in Finder. It boots straight into `HDV/g3s-omti-WORKING.hdv` with no floppy and no flags to remember, running the section 4 command with everything filled in. If your ROM archive isn't at the default path it checks (`~/yourpathyltoGitHub/GenieIIIs/rom/...`), edit `ROM_PATH` near the top of the file.
 
 The script reads `~/.sdltrs.t8c` (the config file `sdl2trs` maintains) before applying its own flags. If you previously attached something to a floppy or hard slot through the GUI and saved config (Alt-menu → "Configuration/State Files"), it stays attached, because `sdl2trs` does not auto-save on quit and an omitted flag never clears a slot. The script clears every `disk` and `hard` slot itself, so this is safe either way.
 
@@ -67,7 +67,7 @@ Same as above, but give `-disk0` a real floppy image instead of `""`:
   -nofullscreen
 ```
 
-`dmk-working/egcpm02a.dmk` (repo root, gitignored) is a safe working copy carrying `COPY.COM` and various tools. Never point `-disk0` directly at anything under `~/Documents/GitHub/GenieIIIs/`; always work from a copy (see `dmk_file_safety` in `DEBUG.md` if you need another floppy).
+`dmk-working/egcpm02a.dmk` (repo root, gitignored) is a safe working copy carrying `COPY.COM` and various tools. Never point `-disk0` directly at anything under `~/yourpathtogithub/GenieIIIs/`; always work from a copy (see `dmk_file_safety` in `DEBUG.md` if you need another floppy).
 
 ### Copying files
 
