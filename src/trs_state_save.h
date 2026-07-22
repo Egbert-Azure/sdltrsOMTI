@@ -59,6 +59,7 @@ extern void trs_omti_save(FILE *file);
 extern void trs_screen_save(FILE *file);
 extern void trs_stringy_save(FILE *file);
 extern void trs_uart_save(FILE *file);
+extern void trs_xebec_save(FILE *file);
 extern void trs_z80_save(FILE *file);
 
 extern void trs_cassette_load(FILE *file);
@@ -75,6 +76,7 @@ extern void trs_omti_load(FILE *file);
 extern void trs_screen_load(FILE *file);
 extern void trs_stringy_load(FILE *file);
 extern void trs_uart_load(FILE *file);
+extern void trs_xebec_load(FILE *file);
 extern void trs_z80_load(FILE *file);
 
 #endif /* _TRS_STATE_SAVE_H */

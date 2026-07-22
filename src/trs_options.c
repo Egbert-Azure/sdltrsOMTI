@@ -43,6 +43,7 @@
 #include "trs_state_save.h"
 #include "trs_stringy.h"
 #include "trs_uart.h"
+#include "trs_xebec.h"
 
 #define MAX_SCALE   4
 #define OPTIONS     (int)(sizeof(options) / sizeof(options[0]))
@@ -215,12 +216,8 @@ static const struct {
   { "halt",            opt_value,         1, 0, &Z80_HALT             },
   { "h0",              opt_file,          1, 0, "h"                   },
   { "h1",              opt_file,          1, 1, "h"                   },
-  { "h2",              opt_file,          1, 2, "h"                   },
-  { "h3",              opt_file,          1, 3, "h"                   },
   { "hard0",           opt_file,          1, 0, "h"                   },
   { "hard1",           opt_file,          1, 1, "h"                   },
-  { "hard2",           opt_file,          1, 2, "h"                   },
-  { "hard3",           opt_file,          1, 3, "h"                   },
   { "harddir",         opt_dirname,       1, 0, trs_hard_dir          },
   { "hd",              opt_dirname,       1, 0, trs_hard_dir          },
   { "hdboot",          opt_value,         0, 1, &trs_hd_boot          },
@@ -314,9 +311,7 @@ static const struct {
   { "noxmem",          opt_value,         0, 0, &xmem80               },
   { "noxmem80",        opt_value,         0, 0, &xmem80               },
   { "o0",              opt_file,          1, 0, "o"                   },
-  { "o1",              opt_file,          1, 1, "o"                   },
   { "omti0",           opt_file,          1, 0, "o"                   },
-  { "omti1",           opt_file,          1, 1, "o"                   },
   { "pause",           opt_value,         0, 1, &trs_paused           },
   { "p",               opt_printer,       1, 0, NULL                  },
   { "pd",              opt_dirname,       1, 0, trs_printer_dir       },
@@ -393,6 +388,8 @@ static const struct {
   { "wafer6",          opt_file,          1, 6, "w"                   },
   { "wafer7",          opt_file,          1, 7, "w"                   },
   { "window",          opt_window,        1, 0, NULL                  },
+  { "x0",              opt_file,          1, 0, "x"                   },
+  { "xebec0",          opt_file,          1, 0, "x"                   },
   { "xmem",            opt_memory,        0, 7, &xmem80               },
   { "xmem80",          opt_memory,        0, 7, &xmem80               },
   { "y",               opt_intval,        1, 7, NULL                  },
@@ -617,6 +614,12 @@ static void opt_file(const char *arg, int intarg, int *stringarg)
         trs_omti_attach(intarg, arg);
       else
         trs_omti_remove(intarg);
+      break;
+    case 'x':
+      if (arg[0])
+        trs_xebec_attach(intarg, arg);
+      else
+        trs_xebec_remove(intarg);
       break;
     case 'w':
       if (arg[0])
@@ -888,11 +891,14 @@ int trs_load_config_file(void)
   for (i = 0; i < 8; i++)
     trs_disk_remove(i);
 
-  for (i = 0; i < 4; i++)
+  for (i = 0; i < TRS_HARD_MAXDRIVES; i++)
     trs_hard_remove(i);
 
-  for (i = 0; i < 2; i++)
+  for (i = 0; i < TRS_OMTI_MAXDRIVES; i++)
     trs_omti_remove(i);
+
+  for (i = 0; i < TRS_XEBEC_MAXDRIVES; i++)
+    trs_xebec_remove(i);
 
   for (i = 0; i < 8; i++)
     stringy_remove(i);
@@ -1133,13 +1139,13 @@ int trs_write_config_file(const char *filename)
       Z80_HALT == 'h' ? "halt"  :
       Z80_HALT == 'r' ? "reset" : "");
 
-  for (i = 0; i < 4; i++)
+  for (i = 0; i < TRS_HARD_MAXDRIVES; i++)
     fprintf(config_file, "hard%d\t\t= %s\n", i, trs_hard_getfilename(i));
 
   fprintf(config_file, "harddir\t\t= %s\n", trs_hard_dir);
   fprintf(config_file, "%shdboot\n", option(trs_hd_boot));
 
-  for (i = 0; i < 2; i++)
+  for (i = 0; i < TRS_OMTI_MAXDRIVES; i++)
     fprintf(config_file, "omti%d\t\t= %s\n", i, trs_omti_getfilename(i));
 
   fprintf(config_file, "%shuffman\n", option(huffman));
@@ -1225,6 +1231,9 @@ int trs_write_config_file(const char *filename)
 
   trs_get_window(&x, &y, &w, &h);
   fprintf(config_file, "window\t\t= %d,%d,%d,%d\n", x, y, w, h);
+
+  for (i = 0; i < TRS_XEBEC_MAXDRIVES; i++)
+    fprintf(config_file, "xebec%d\t\t= %s\n", i, trs_xebec_getfilename(i));
 
   fprintf(config_file, "%sxmem80\n", option(xmem80));
   fprintf(config_file, "year\t\t= %d\n", trs_year);

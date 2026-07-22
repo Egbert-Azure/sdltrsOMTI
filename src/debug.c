@@ -1030,6 +1030,10 @@ void debug_shell(void)
 	    {
 		trs_omti_debug();
 	    }
+	    else if(!strcmp(command, "xebecdump") || !strcmp(command, "xd"))
+	    {
+		trs_xebec_debug();
+	    }
 	    else if(!strncmp(command, "di", 2))
 	    {
 		trs_disk_debug_flags = 0;

@@ -55,6 +55,7 @@
 #include "trs_state_save.h"
 #include "trs_stringy.h"
 #include "trs_uart.h"
+#include "trs_xebec.h"
 
 #define ENTRY         5
 #define TITLE         6
@@ -942,6 +943,9 @@ int gui_menu(const char *title, const MENU *entry, int selection)
             case OMTI_DRIVE:
               trs_omti_remove(selection - TRS_HARD_MAXDRIVES);
               break;
+            case XEBEC_DRIVE:
+              trs_xebec_remove(selection - TRS_HARD_MAXDRIVES - TRS_OMTI_MAXDRIVES);
+              break;
             case WAFER:
               stringy_remove(selection);
               break;
@@ -976,6 +980,12 @@ int gui_menu(const char *title, const MENU *entry, int selection)
                   filename, HDV, 0, "OMTI Hard Disk Image") >= 0)
                 trs_omti_attach(selection - TRS_HARD_MAXDRIVES, filename);
               break;
+            case XEBEC_DRIVE:
+              if (gui_file(trs_xebec_getfilename(selection - TRS_HARD_MAXDRIVES - TRS_OMTI_MAXDRIVES)[0] ?
+                  trs_xebec_getfilename(selection - TRS_HARD_MAXDRIVES - TRS_OMTI_MAXDRIVES) : trs_hard_dir,
+                  filename, HDV, 0, "Xebec Hard Disk Image") >= 0)
+                trs_xebec_attach(selection - TRS_HARD_MAXDRIVES - TRS_OMTI_MAXDRIVES, filename);
+              break;
             case WAFER:
               if (gui_file(stringy_get_name(selection)[0] ?
                   stringy_get_name(selection) : trs_cass_dir,
@@ -1008,7 +1018,8 @@ int gui_menu(const char *title, const MENU *entry, int selection)
       }
     }
 
-    if (entry[selection].type == HARD_DRIVE || entry[selection].type == OMTI_DRIVE)
+    if (entry[selection].type == HARD_DRIVE || entry[selection].type == OMTI_DRIVE ||
+        entry[selection].type == XEBEC_DRIVE)
       return selection; /* Update Hard Disk Geometry */
   }
 }
@@ -1429,10 +1440,8 @@ void gui_hard_menu(void)
   MENU menu[] =
   {{" 0: ", HARD_DRIVE},
    {" 1: ", HARD_DRIVE},
-   {" 2: ", HARD_DRIVE},
-   {" 3: ", HARD_DRIVE},
    {" omti0: ", OMTI_DRIVE},
-   {" omti1: ", OMTI_DRIVE},
+   {" xebec0: ", XEBEC_DRIVE},
    {"", TITLE},
    {"Save Disk Set", SAVE_SET},
    {"Load Disk Set", LOAD_SET},
@@ -1454,29 +1463,36 @@ void gui_hard_menu(void)
     int  i;
     int  value;
 
-    for (i = 0; i < 4; i++) {
+    for (i = 0; i < TRS_HARD_MAXDRIVES; i++) {
       gui_limit(trs_hard_getfilename(i), &menu[i].text[4], 56);
       menu[i].text[0] = trs_hard_getwriteprotect(i) ? '*' : ' ';
     }
     for (i = 0; i < TRS_OMTI_MAXDRIVES; i++) {
-      gui_limit(trs_omti_getfilename(i), &menu[4 + i].text[8], 52);
-      menu[4 + i].text[0] = trs_omti_getwriteprotect(i) ? '*' : ' ';
+      gui_limit(trs_omti_getfilename(i), &menu[TRS_HARD_MAXDRIVES + i].text[8], 52);
+      menu[TRS_HARD_MAXDRIVES + i].text[0] = trs_omti_getwriteprotect(i) ? '*' : ' ';
+    }
+    for (i = 0; i < TRS_XEBEC_MAXDRIVES; i++) {
+      gui_limit(trs_xebec_getfilename(i), &menu[TRS_HARD_MAXDRIVES + TRS_OMTI_MAXDRIVES + i].text[9], 51);
+      menu[TRS_HARD_MAXDRIVES + TRS_OMTI_MAXDRIVES + i].text[0] = trs_xebec_getwriteprotect(i) ? '*' : ' ';
     }
 
-    if (selection < 4)
+    if (selection < TRS_HARD_MAXDRIVES)
       trs_hard_getgeometry(selection, &cylinders, &heads, &sectors);
-    else if (selection < 4 + TRS_OMTI_MAXDRIVES)
-      trs_omti_getgeometry(selection - 4, &cylinders, &heads, &sectors);
+    else if (selection < TRS_HARD_MAXDRIVES + TRS_OMTI_MAXDRIVES)
+      trs_omti_getgeometry(selection - TRS_HARD_MAXDRIVES, &cylinders, &heads, &sectors);
+    else if (selection < TRS_HARD_MAXDRIVES + TRS_OMTI_MAXDRIVES + TRS_XEBEC_MAXDRIVES)
+      trs_xebec_getgeometry(selection - TRS_HARD_MAXDRIVES - TRS_OMTI_MAXDRIVES,
+          &cylinders, &heads, &sectors);
 
-    snprintf(&menu[10].text[55], 6, "%5d", cylinders);
-    snprintf(&menu[11].text[57], 4, "%3d", heads);
-    snprintf(&menu[12].text[57], 4, "%3d", sectors);
-    snprintf(&menu[13].text[55], 6, "%s", drives[drive]);
+    snprintf(&menu[TRS_HARD_MAXDRIVES + TRS_OMTI_MAXDRIVES + TRS_XEBEC_MAXDRIVES + 4].text[55], 6, "%5d", cylinders);
+    snprintf(&menu[TRS_HARD_MAXDRIVES + TRS_OMTI_MAXDRIVES + TRS_XEBEC_MAXDRIVES + 5].text[57], 4, "%3d", heads);
+    snprintf(&menu[TRS_HARD_MAXDRIVES + TRS_OMTI_MAXDRIVES + TRS_XEBEC_MAXDRIVES + 6].text[57], 4, "%3d", sectors);
+    snprintf(&menu[TRS_HARD_MAXDRIVES + TRS_OMTI_MAXDRIVES + TRS_XEBEC_MAXDRIVES + 7].text[55], 6, "%s", drives[drive]);
     gui_clear();
 
     selection = gui_menu(" Hard Disk Management ", menu, selection);
     switch (selection) {
-      case 10:
+      case TRS_HARD_MAXDRIVES + TRS_OMTI_MAXDRIVES + TRS_XEBEC_MAXDRIVES + 4:
         snprintf(input, 5, "%d", cylinders);
         if (gui_input(" Enter Cylinder Count ", input, input, 4, 0) > 0) {
           value = atoi(input);
@@ -1491,7 +1507,7 @@ void gui_hard_menu(void)
           }
         }
         break;
-      case 11:
+      case TRS_HARD_MAXDRIVES + TRS_OMTI_MAXDRIVES + TRS_XEBEC_MAXDRIVES + 5:
         snprintf(input, 2, "%d", heads);
         if (gui_input(" Enter Head Count ", input, input, 1, 0) > 0) {
           value = atoi(input);
@@ -1503,7 +1519,7 @@ void gui_hard_menu(void)
           }
         }
         break;
-      case 12:
+      case TRS_HARD_MAXDRIVES + TRS_OMTI_MAXDRIVES + TRS_XEBEC_MAXDRIVES + 6:
         snprintf(input, 4, "%d", sectors);
         if (gui_input(" Enter Sector Count ", input, input, 3, 0) > 0) {
           value = atoi(input);
@@ -1515,10 +1531,10 @@ void gui_hard_menu(void)
           }
         }
         break;
-      case 13:
-        drive = gui_popup("Drive", drives, 5, drive);
+      case TRS_HARD_MAXDRIVES + TRS_OMTI_MAXDRIVES + TRS_XEBEC_MAXDRIVES + 7:
+        drive = gui_popup("Drive", drives, TRS_HARD_MAXDRIVES + 1, drive);
         break;
-      case 14:
+      case TRS_HARD_MAXDRIVES + TRS_OMTI_MAXDRIVES + TRS_XEBEC_MAXDRIVES + 8:
         filename[0] = 0;
         if (gui_input(" Enter Filename for Hard Disk Image ",
             trs_hard_dir, filename, FILENAME_MAX, 1) > 0) {

@@ -302,6 +302,14 @@ static void omti_command(void)
         state.command, state.lun, cyl, head, sector);
 #endif
 
+  /* LUN is a 1-bit field in the CDB, so guest software can address a
+   * second unit even though only TRS_OMTI_MAXDRIVES is emulated: treat
+   * it as not-present rather than indexing state.d[] out of bounds. */
+  if (state.lun >= TRS_OMTI_MAXDRIVES) {
+    omti_finish(-1);
+    return;
+  }
+
   switch (state.command) {
   case TRS_OMTI_READ:
     if (omti_seek(state.lun, cyl, head, sector) == 0) {

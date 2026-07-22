@@ -67,6 +67,7 @@
 #include "trs_omti.h"
 #include "trs_stringy.h"
 #include "trs_state_save.h"
+#include "trs_xebec.h"
 
 int trs_disk_controller = 1;
 int trs_disk_doubler = TRSDISK_BOTH;
@@ -475,6 +476,7 @@ trs_disk_init(int poweron)
 
   trs_hard_init(poweron);
   trs_omti_init(poweron);
+  trs_xebec_init(poweron);
   stringy_init();
   trs_cancel_event();
 }

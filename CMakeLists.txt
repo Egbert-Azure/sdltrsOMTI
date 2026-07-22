@@ -34,6 +34,7 @@ set(SOURCES
 	src/trs_state_save.c
 	src/trs_stringy.c
 	src/trs_uart.c
+	src/trs_xebec.c
 	src/z80.c
 	src/PasteManager.c
 )

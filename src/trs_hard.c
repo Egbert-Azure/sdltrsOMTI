@@ -367,6 +367,14 @@ void trs_hard_out(int port, int value)
   case TRS_HARD_COMMAND:
     state.bytesdone = 0;
     state.command = value;
+    /* SDH's drive field is 2 bits (0-3), so guest software can select a
+     * unit past TRS_HARD_MAXDRIVES even though only that many are
+     * emulated: treat it as not-present rather than indexing state.d[]
+     * out of bounds. */
+    if (state.drive >= TRS_HARD_MAXDRIVES) {
+      hard_error(TRS_HARD_NFERR);
+      break;
+    }
     switch (value & TRS_HARD_CMDMASK) {
     case TRS_HARD_RESTORE:
       hard_restore();
