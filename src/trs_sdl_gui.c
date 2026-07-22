@@ -88,6 +88,23 @@ static const char *drives[] = {
   "    7"
 };
 
+/* Drive-picker choices for gui_hard_menu()'s "Create Hard Disk Image"
+ * action: the four WD1000 slots plus the two OMTI slots, since a newly
+ * created blank .hdv is equally valid for either controller (same Reed
+ * header, see trs_create_blank_hard()) but they're separate attach points
+ * (trs_hard_attach() vs trs_omti_attach()). Kept separate from the shared
+ * drives[] array above so this doesn't affect the other menus that slice
+ * that array to different lengths (floppy, stringy, etc). */
+static const char *hard_create_drives[] = {
+  " None",
+  "    0",
+  "    1",
+  "    2",
+  "    3",
+  "omti0",
+  "omti1"
+};
+
 static const char *yes_no[] = {
   "        No",
   "       Yes"
@@ -1471,7 +1488,7 @@ void gui_hard_menu(void)
     snprintf(&menu[10].text[55], 6, "%5d", cylinders);
     snprintf(&menu[11].text[57], 4, "%3d", heads);
     snprintf(&menu[12].text[57], 4, "%3d", sectors);
-    snprintf(&menu[13].text[55], 6, "%s", drives[drive]);
+    snprintf(&menu[13].text[55], 6, "%s", hard_create_drives[drive]);
     gui_clear();
 
     selection = gui_menu(" Hard Disk Management ", menu, selection);
@@ -1516,7 +1533,7 @@ void gui_hard_menu(void)
         }
         break;
       case 13:
-        drive = gui_popup("Drive", drives, 5, drive);
+        drive = gui_popup("Drive", hard_create_drives, 7, drive);
         break;
       case 14:
         filename[0] = 0;
@@ -1526,8 +1543,10 @@ void gui_hard_menu(void)
           if (gui_file_overwrite()) {
             if (trs_create_blank_hard(filename, cylinders, heads, sectors) != 0)
               gui_error(filename);
-            else if (drive)
+            else if (drive >= 1 && drive <= 4)
               trs_hard_attach(drive - 1, filename);
+            else if (drive >= 5)
+              trs_omti_attach(drive - 5, filename);
             return;
           }
         }
