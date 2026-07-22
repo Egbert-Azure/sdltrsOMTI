@@ -31,7 +31,7 @@ The fix is a disk-image workaround, not a code change: take a hard disk built no
 
 `COPYSYS.COM`/`GENCPM.COM` are proprietary DR binaries with no source. The bug inside them — why the directory entry and the real write location disagree — was never root-caused at the Z80-instruction level, only worked around. Making `SYSTEM.SUB` produce a directly bootable disk with no manual patch step would need either a `COPYSYS`/`GENCPM` invocation that avoids the bug, or live Z80 debugging of those binaries. Not planned; the workaround is sufficient and repeatable.
 
-## Follow-up fixes (same day)
+## Follow-up fixes
 
 The first working boot had two more issues, both fixed in `build_working_hdv.py`:
 
