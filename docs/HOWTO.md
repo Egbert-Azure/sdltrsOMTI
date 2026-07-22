@@ -3,7 +3,9 @@
 # Running sdltrsOMTI with a working OMTI hard disk
 
 Usage guide. For the controller protocol, see `OMTI_CONTROLLER.md`. For the debugging history behind these choices, see `DEBUG.md`.
+
 ![alt text](image.png)
+<!-- TODO(7): set a real image path (e.g. docs/c-prompt.png) and meaningful alt text. As written, image.png must sit next to this file at the repo root or it renders broken on GitHub. -->
 
 ## 1. Build
 
@@ -11,32 +13,33 @@ Usage guide. For the controller protocol, see `OMTI_CONTROLLER.md`. For the debu
 mkdir -p build && cd build && cmake .. && cmake --build .
 ```
 
-The binary is `build/sdl2trs`. Rebuild after any change under `src/` (`cmake --build build` from the repo root). sdltrs2 for MacOS has the function to rezize the window.
+The binary is `build/sdl2trs`. Rebuild after any change under `src/` (`cmake --build build` from the repo root). On macOS the `sdl2trs` window is resizable.
 
 ## 2. Which `.hdv` to use
 
-Use `HDV/g3s-omti-WORKING.hdv`. It is the only correct and complete OMTI image in `HDV/`(rest might be just testing):
+Use `HDV/g3s-omti-WORKING.hdv`. It is the only correct and complete OMTI image in `HDV/` (the rest are just test images):
 
 - Full 615-cylinder / 21.4 MB size, which the D: partition needs
 - Boots directly from the raw hard-disk EPROM with no floppy attached
 - Both C: and D: are valid, clean CP/M partitions
 
-One `.hdv` is one physical drive holding two logical CP/M drives, C: and D:. You attach it once at `-omti0`; there is no separate file or slot for D:. The OMTI controller has no notion of C: or D:, so to the emulated hardware `-omti0` is a single flat block device. The split lives in the guest CP/M BIOS: `DISKIO1.MAC` (`DPBHD1`/`DPBHD2`) reads and writes the one image at two cylinder offsets, C: from cylinder 2 and D: from cylinder 307, where C: ends. The 1990s hardware worked the same way: one physical Seagate ST225 partitioned in software. The message about 
+One `.hdv` is one physical drive holding two logical CP/M drives, C: and D:. You attach it once at `-omti0`; there is no separate file or slot for D:. The OMTI controller has no notion of C: or D:, so to the emulated hardware `-omti0` is a single flat block device. The split lives in the guest CP/M BIOS: `DISKIO1.MAC` (`DPBHD1`/`DPBHD2`) reads and writes the one image at two cylinder offsets, C: from cylinder 2 and D: from cylinder 307, where C: ends. The 1990s hardware worked the same way: one physical Seagate ST225 partitioned in software.
+<!-- TODO(1): an unfinished sentence "The message about ..." was left here. Delete it or finish the thought? The doubled "Seagate ST 225" banner is already explained in section 7. -->
 
 The other images in `HDV/g3s-omti-*.hdv` (`fixed`, `fixed2`–`fixed5`, `real`, `real2`, `st225`, `612-2h`, `d`, `fresh`, `formatted`, `handbuilt`, `handbuilt2`) are throwaway intermediates from that debugging work and can be deleted. (`g3s-hard21-f1.hdv` / `f2.hdv` are unrelated WD1000 test images, not OMTI.)
 
-`g3s-omti-WORKING.hdv` is a live disk, not a template. Files you write to it (below) persist. To keep a pristine copy, back it up
+`g3s-omti-WORKING.hdv` is a live disk, not a template. Files you write to it (below) persist. To keep a pristine copy, back it up:
 
 ```sh
 cp HDV/g3s-omti-WORKING.hdv HDV/g3s-omti-WORKING.backup.hdv
 ```
 
 To build a fresh one from scratch, see the docstring in `dmk-working/build_working_hdv.py` — a scripted, reproducible recipe that works around a bug in the original `COPYSYS.COM` (see `DEBUG.md`).
-I needed to do this 
+<!-- TODO(2): a dangling "I needed to do this" was left here — finish the thought or remove it. -->
 
 ## 3. One-click launch
 
-Double-click `sdl2trs-omti.command` (repo root) in Finder. It boots straight into `HDV/g3s-omti-WORKING.hdv` with no floppy and no flags to remember, running the section 4 command with everything filled in. If your ROM archive isn't at the default path it checks (`~/yourpathyltoGitHub/GenieIIIs/rom/...`), edit `ROM_PATH` near the top of the file.
+Double-click `sdl2trs-omti.command` (repo root) in Finder. It boots straight into `HDV/g3s-omti-WORKING.hdv` with no floppy and no flags to remember, running the section 4 command with everything filled in. If your ROM archive isn't at the default path it checks (`~/path/to/GitHub/GenieIIIs/rom/...`), edit `ROM_PATH` near the top of the file.
 
 The script reads `~/.sdltrs.t8c` (the config file `sdl2trs` maintains) before applying its own flags. If you previously attached something to a floppy or hard slot through the GUI and saved config (Alt-menu → "Configuration/State Files"), it stays attached, because `sdl2trs` does not auto-save on quit and an omitted flag never clears a slot. The script clears every `disk` and `hard` slot itself, so this is safe either way.
 
@@ -67,7 +70,7 @@ Same as above, but give `-disk0` a real floppy image instead of `""`:
   -nofullscreen
 ```
 
-`dmk-working/egcpm02a.dmk` (repo root, gitignored) is a safe working copy carrying `COPY.COM` and various tools. Never point `-disk0` directly at anything under `~/yourpathtogithub/GenieIIIs/`; always work from a copy (see `dmk_file_safety` in `DEBUG.md` if you need another floppy).
+`dmk-working/egcpm02a.dmk` (repo root, gitignored) is a safe working copy carrying `COPY.COM` and various tools. Never point `-disk0` directly at anything under `~/path/to/GitHub/GenieIIIs/`; always work from a copy (see the resume notes in `DEBUG.md` if you need another floppy).
 
 ### Copying files
 

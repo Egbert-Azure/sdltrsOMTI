@@ -31,7 +31,7 @@ The fix is a disk-image workaround, not a code change: take a hard disk built no
 
 `COPYSYS.COM`/`GENCPM.COM` are proprietary DR binaries with no source. The bug inside them — why the directory entry and the real write location disagree — was never root-caused at the Z80-instruction level, only worked around. Making `SYSTEM.SUB` produce a directly bootable disk with no manual patch step would need either a `COPYSYS`/`GENCPM` invocation that avoids the bug, or live Z80 debugging of those binaries. Not planned; the workaround is sufficient and repeatable.
 
-## Follow-up fixes
+## Follow-up fixes (same day)
 
 The first working boot had two more issues, both fixed in `build_working_hdv.py`:
 
@@ -103,5 +103,5 @@ Direct EPROM boot originally got through `HDBOOTER` relocation, real `CPMLDR` ex
 - `egcpm34.dmk` is the safe bootstrap floppy (doesn't auto-try booting C:); `egcpm02a.dmk` has the real `SYSTEM.SUB`. To rebuild the boot-image base for `build_working_hdv.py`: `egcpm34.dmk` on disk0, `egcpm02a.dmk` on disk1 (B:), the standard ROM `g3s_8501004_bootrom_2732.bin`, and a target `.hdv` on `-omti0`.
 - Fresh blank target for the `SYSTEM.SUB` base step: 256-byte Reed header (reuse from any existing `g3s-omti-*.hdv`) plus a `0xE5`-filled data area. 1 MB is enough headroom for this intermediate; `build_working_hdv.py` extends the final output to the full 615-cyl/21.4 MB itself, needed for D:.
 - Debug with `-io 0xc` and `grep "trs_omti: command\|ERROR"` on the log.
-- `cpmextract.py` (`~/Documents/GitHub/cpmextract/cpmextract.py`) extracts files live from any DMK — use it instead of the `src ST 225/egcpm001/` reference copies when precision matters.
-- Never attach a file directly from `~/Documents/GitHub/GenieIIIs/` — always work from copies (`dmk-working/` in the repo root, or a throwaway scratch copy).
+- `cpmextract.py` (from the separate `cpmextract` repo) extracts files live from any DMK — use it instead of the `src ST 225/egcpm001/` reference copies when precision matters.
+- Never attach a file directly from the original `GenieIIIs` source archive — always work from copies (`dmk-working/` in the repo root, or a throwaway scratch copy).
