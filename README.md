@@ -29,6 +29,16 @@ The original OMTI ports (`0x40`–`0x43`) came from disassembling Arnulf Sopp's 
 - [`ROM/g3s_8501004_bootrom_2732.bin`](ROM/g3s_8501004_bootrom_2732.bin) — the genuine Xebec-speaking boot ROM.
 - [`ROM/g3s_hd-omti_bootrom_2764.bin`](ROM/g3s_hd-omti_bootrom_2764.bin) — the modified EPROM that boots from hard disk regardless of controller.
 
+File: g3s_8501004_bootrom_2732.bin
+Size: 4 KB
+EPROM type: 2732
+Role: standard Genie IIIs boot ROM
+────────────────────────────────────────
+File: g3s_hd-omti_bootrom_2764.bin
+Size: 8 KB
+EPROM type: 2764
+Role: OMTI HD-boot ROM (Sopp's mod)
+
 ## Building
 
 ```sh
