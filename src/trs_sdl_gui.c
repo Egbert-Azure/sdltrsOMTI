@@ -1472,7 +1472,6 @@ void gui_hard_menu(void)
     int const active = genie3s ? hdctl_get_active() : HARD_DRIVE;
     int const nslots = hdctl_maxdrives(active);
     MENU menu[16];
-    const char *targets[1 + 4];
     char input[5];
     int  n = 0, i, value;
     int  ctrl_row = -1, cyl_row, head_row, sec_row, insert_row, create_row;
@@ -1517,15 +1516,9 @@ void gui_hard_menu(void)
     menu[n].type = ENTRY; sec_row = n++;
 
     if (drive > nslots) drive = 0;   /* clamp if the controller changed */
-    targets[0] = "  None";
-    for (i = 0; i < nslots; i++) {
-      static char lbl[4][8];
-      snprintf(lbl[i], sizeof(lbl[i]), "%6d", i);
-      targets[i + 1] = lbl[i];
-    }
     snprintf(menu[n].text, sizeof(menu[n].text), "%-60s",
              "Insert Created Hard Disk Image Into Drive");
-    snprintf(&menu[n].text[53], 7, "%6s", targets[drive]);
+    snprintf(&menu[n].text[54], 6, "%5s", drives[drive]); /* drives[]: None,0..7 */
     menu[n].type = ENTRY; insert_row = n++;
     snprintf(menu[n].text, sizeof(menu[n].text), "%s",
              "Create Hard Disk Image with Above Parameters");
@@ -1580,7 +1573,7 @@ void gui_hard_menu(void)
           }
         }
     } else if (selection == insert_row) {
-        drive = gui_popup("Drive", targets, nslots + 1, drive);
+        drive = gui_popup("Drive", drives, nslots + 1, drive);
     } else if (selection == create_row) {
         filename[0] = 0;
         if (gui_input(" Enter Filename for Hard Disk Image ",
