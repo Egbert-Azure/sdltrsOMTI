@@ -1536,7 +1536,7 @@ void gui_hard_menu(void)
     gui_clear();
     selection = gui_menu(" Hard Disk Management ", menu, selection);
 
-    if (selection == ctrl_row) {
+    if (genie3s && selection == ctrl_row) {
       int cur = 0;
       for (i = 0; i < 3; i++)
         if (ctrl_types[i] == active) cur = i;
