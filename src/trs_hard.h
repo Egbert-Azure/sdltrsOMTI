@@ -147,7 +147,7 @@ extern void  trs_hard_getgeometry(int unit, int *cyls, int *head, int *secs);
 #define TRS_HARD_SIZESHIFT  5
 #define TRS_HARD_DRIVEMASK  0x18
 #define TRS_HARD_DRIVESHIFT 3
-#define TRS_HARD_MAXDRIVES  2 /* limited to 2 units in the sdltrs UI/config; DRIVEMASK still allows 0-3 in the CDB, guarded at dispatch */
+#define TRS_HARD_MAXDRIVES  4 /* WD1000 SDH drive field is 2 bits -> 4 units */
 #define TRS_HARD_HEADMASK   0x07
 #define TRS_HARD_HEADSHIFT  0
 #define TRS_HARD_MAXHEADS   8

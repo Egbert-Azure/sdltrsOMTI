@@ -47,7 +47,7 @@ extern const char *trs_omti_getfilename(int unit);
 extern int   trs_omti_getwriteprotect(int unit);
 extern void  trs_omti_getgeometry(int unit, int *cyls, int *head, int *secs);
 
-#define TRS_OMTI_MAXDRIVES 1 /* limited to 1 unit in the sdltrs UI/config */
+#define TRS_OMTI_MAXDRIVES 2 /* SASI 1-bit LUN (hd2.mac MAXDRIVE) addresses 2 units */
 
 /*
  * Port map, relative to base 0x40
