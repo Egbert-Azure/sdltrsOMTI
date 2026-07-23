@@ -21,6 +21,7 @@ set(SOURCES
 	src/trs_disk.c
 	src/trs_hard.c
 	src/trs_hard_image.c
+	src/trs_hdctl.c
 	src/trs_imp_exp.c
 	src/trs_interrupt.c
 	src/trs_io.c
