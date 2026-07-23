@@ -6,6 +6,11 @@
 
 The goal is to emulate the **Xebec S1410 SASI hard-disk controller** — the controller GDOS 2.4 and Klaus Kaempf's CP/M port for the TCS Genie IIIs actually use — alongside the OMTI 5527 and WD1000/1010 controllers `sdltrsOMTI` already emulates. The S1410 is closer to the OMTI than to the WD1000, but compatible with neither.
 
+In this fork also the cumbersome and quick and dirty GUI entries in Hardrive menu will be fixed.
+OMTI/WD1000 GUI and code architecture — merge, per-slot controller dropdown, or stay separate?
+Write-protect toggle doesn't work on omti0/omti1 rows in Hard Disk Management
+
+
 ## Status: working, verified end-to-end under real GDOS 2.4
 
 ![GDOS 2.4 booted on the emulator: `pd 0` showing drives 5 and 6, then `dir 5` and `dir 6` listing their directories](image.png)
