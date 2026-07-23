@@ -211,6 +211,7 @@ extern void trs_debug(void);
 extern void trs_disk_debug(void);
 extern void trs_hard_debug(void);
 extern void trs_omti_debug(void);
+extern void trs_xebec_debug(void);
 #endif
 extern int  trs_disk_motoroff(void);
 

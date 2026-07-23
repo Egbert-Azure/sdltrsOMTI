@@ -51,6 +51,7 @@
 #include "error.h"
 #include "reed.h"
 #include "trs.h"
+#include "trs_hard_image.h"
 #include "trs_omti.h"
 #include "trs_state_save.h"
 
@@ -70,15 +71,7 @@ typedef enum {
   OMTI_PH_STATUS
 } OmtiPhase;
 
-/* Structure describing one drive (LUN) */
-typedef struct {
-  FILE* file;
-  char filename[FILENAME_MAX];
-  int writeprot;
-  int cyls;
-  int heads;
-  int secs;
-} Drive;
+/* One drive (LUN); geometry decoding is shared (trs_hard_image.h) */
 
 /* Structure describing controller state */
 typedef struct {
@@ -99,7 +92,7 @@ typedef struct {
   int secsize;
   Uint8 final_status;
 
-  Drive d[TRS_OMTI_MAXDRIVES];
+  HardImage d[TRS_OMTI_MAXDRIVES];
 } State;
 
 static State state;
@@ -302,6 +295,14 @@ static void omti_command(void)
         state.command, state.lun, cyl, head, sector);
 #endif
 
+  /* LUN is a 1-bit field in the CDB, so guest software can address a
+   * second unit even though only TRS_OMTI_MAXDRIVES is emulated: treat
+   * it as not-present rather than indexing state.d[] out of bounds. */
+  if (state.lun >= TRS_OMTI_MAXDRIVES) {
+    omti_finish(-1);
+    return;
+  }
+
   switch (state.command) {
   case TRS_OMTI_READ:
     if (omti_seek(state.lun, cyl, head, sector) == 0) {
@@ -467,7 +468,7 @@ static int omti_data_in(void)
  */
 static int omti_seek(int lun, int cyl, int head, int sector)
 {
-  Drive *d = &state.d[lun];
+  HardImage *d = &state.d[lun];
 
   if (d->file == NULL && omti_open(lun) != 0) return -1;
 
@@ -484,8 +485,8 @@ static int omti_seek(int lun, int cyl, int head, int sector)
     return -1;
   }
 
-  if (d->file && fseek(d->file, sizeof(ReedHardHeader) +
-      (long)state.secsize * ((cyl * d->heads + head) * d->secs + sector), 0) != 0) {
+  if (d->file && fseek(d->file,
+      hard_image_offset(d, state.secsize, cyl, head, sector), 0) != 0) {
     file_error("omti%d: fseek '%s'", lun, d->filename);
     return -1;
   }
@@ -504,56 +505,11 @@ static int omti_seek(int lun, int cyl, int head, int sector)
  */
 static int omti_open(int drive)
 {
-  Drive *d = &state.d[drive];
-  ReedHardHeader rhh;
-  size_t res;
-  int secs;
+  HardImage *d = &state.d[drive];
 
-  if (d->filename[0] == 0)
-    goto fail;
-
-  if (d->file != NULL) {
-    fclose(d->file);
-    d->file = NULL;
-  }
-
-  d->file = fopen(d->filename, "rb+");
-  if (d->file == NULL) {
-    if (errno == EACCES || errno == EROFS)
-      d->file = fopen(d->filename, "rb");
-    if (d->file == NULL) {
-      file_error("open omti%d: '%s'", drive, d->filename);
-      goto fail;
-    }
-    d->writeprot = 1;
-  } else {
-    d->writeprot = 0;
-  }
-
-  res = fread(&rhh, sizeof(rhh), 1, d->file);
-  if (res != 1 || rhh.id1 != 0x56 || rhh.id2 != 0xcb || rhh.ver >= 0x20) {
-    error("unrecognized omti%d drive image: '%s'", drive, d->filename);
-    goto fail;
-  }
-
-  if (rhh.flag1 & 0x80) d->writeprot = 1;
-
-  d->cyls = (rhh.cylhi << 8) | (rhh.cyllo & 0xff);
-
-  secs = rhh.sec ? rhh.sec : 256;
-  if (rhh.heads == 0) {
-    d->secs  = OMTI_SEC_PER_TRK;
-    d->heads = secs / OMTI_SEC_PER_TRK;
-  } else {
-    d->heads = rhh.heads;
-    d->secs  = secs / d->heads;
-  }
-
-  if ((secs % d->secs) != 0 || d->heads <= 0 || d->heads > OMTI_MAXHEADS) {
-    error("unusable geometry (%d heads/%d secs) in omti%d image: '%s'",
-        d->heads, d->secs, drive, d->filename);
-    goto fail;
-  }
+  if (hard_image_open(d, drive, "omti",
+                      OMTI_SEC_PER_TRK, OMTI_MAXHEADS) != 0)
+    return -1;
 
   /* No sector-size field exists in this protocol. The OMTI 5527 and the
    * ST-506/MFM drives it was paired with (e.g. the Seagate ST225) are
@@ -563,15 +519,9 @@ static int omti_open(int drive)
 
   state.status = TRS_OMTI_IDLE;
   return 0;
-
-fail:
-  if (d->file) fclose(d->file);
-  d->file = NULL;
-  d->filename[0] = 0;
-  return -1;
 }
 
-static void trs_save_omtidrive(FILE *file, Drive *d)
+static void trs_save_omtidrive(FILE *file, HardImage *d)
 {
   int file_not_null = (d->file != NULL);
 
@@ -583,7 +533,7 @@ static void trs_save_omtidrive(FILE *file, Drive *d)
   trs_save_int(file, &d->secs, 1);
 }
 
-static void trs_load_omtidrive(FILE *file, Drive *d)
+static void trs_load_omtidrive(FILE *file, HardImage *d)
 {
   int file_not_null;
 

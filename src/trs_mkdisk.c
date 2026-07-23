@@ -36,6 +36,7 @@
 #include "trs_cassette.h"
 #include "trs_disk.h"
 #include "trs_hard.h"
+#include "trs_hdctl.h"
 #include "trs_mkdisk.h"
 #include "trs_stringy.h"
 
@@ -62,12 +63,11 @@ int trs_write_protect(int type, int drive)
   int newmode;
   struct stat st = { 0 };
 
-  switch (type) {
+  if (hdctl_is_hard_type(type)) {
+    filename = hdctl_getfilename(type, drive);
+  } else switch (type) {
     case DISK_DRIVE:
       filename = trs_disk_getfilename(drive);
-      break;
-    case HARD_DRIVE:
-      filename = trs_hard_getfilename(drive);
       break;
     case WAFER:
       filename = stringy_get_name(drive);
@@ -95,7 +95,24 @@ int trs_write_protect(int type, int drive)
     return -1;
   }
 #endif
-  switch (type) {
+  if (hdctl_is_hard_type(type)) {
+    /* All three hard controllers store their write-protect flag the same
+       way: bit 7 of the Reed header's flag1 byte (offset 7). */
+    writeprot = !hdctl_getwriteprotect(type, drive);
+    hdctl_remove(type, drive);
+
+    f = fopen(prot_filename, "r+");
+    if (f != NULL) {
+      fseek(f, 7, 0);
+      newmode = getc(f);
+      if (newmode != EOF) {
+        newmode = (newmode & 0x7f) | (writeprot ? 0x80 : 0);
+        fseek(f, 7, 0);
+        putc(newmode, f);
+      }
+      fclose(f);
+    }
+  } else switch (type) {
     case DISK_DRIVE:
       emutype = trs_disk_getdisktype(drive);
       writeprot = !trs_disk_getwriteprotect(drive);
@@ -113,22 +130,6 @@ int trs_write_protect(int type, int drive)
           }
           fclose(f);
         }
-      }
-      break;
-    case HARD_DRIVE:
-      writeprot = !trs_hard_getwriteprotect(drive);
-      trs_hard_remove(drive);
-
-      f = fopen(prot_filename, "r+");
-      if (f != NULL) {
-        fseek(f, 7, 0);
-        newmode = getc(f);
-        if (newmode != EOF) {
-          newmode = (newmode & 0x7f) | (writeprot ? 0x80 : 0);
-          fseek(f, 7, 0);
-          putc(newmode, f);
-        }
-        fclose(f);
       }
       break;
     case WAFER:
@@ -172,12 +173,11 @@ int trs_write_protect(int type, int drive)
     return -1;
   }
 #endif
-  switch (type) {
+  if (hdctl_is_hard_type(type)) {
+    hdctl_attach(type, drive, prot_filename);
+  } else switch (type) {
     case DISK_DRIVE:
       trs_disk_insert(drive, prot_filename);
-      break;
-    case HARD_DRIVE:
-      trs_hard_attach(drive, prot_filename);
       break;
     case WAFER:
       stringy_insert(drive, prot_filename);

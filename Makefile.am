@@ -15,6 +15,8 @@ sdl2trs_SOURCES=src/debug.c \
 		src/trs_cp500.c \
 		src/trs_disk.c \
 		src/trs_hard.c \
+		src/trs_hard_image.c \
+		src/trs_hdctl.c \
 		src/trs_imp_exp.c \
 		src/trs_interrupt.c \
 		src/trs_io.c \
@@ -29,6 +31,7 @@ sdl2trs_SOURCES=src/debug.c \
 		src/trs_state_save.c \
 		src/trs_stringy.c \
 		src/trs_uart.c \
+		src/trs_xebec.c \
 		src/z80.c \
 		src/PasteManager.c
 

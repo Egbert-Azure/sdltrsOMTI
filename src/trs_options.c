@@ -36,13 +36,16 @@
 #include "trs_cassette.h"
 #include "trs_disk.h"
 #include "trs_hard.h"
+#include "trs_hdctl.h"
 #include "trs_memory.h"
+#include "trs_mkdisk.h"
 #include "trs_omti.h"
 #include "trs_sdl_gui.h"
 #include "trs_sdl_keyboard.h"
 #include "trs_state_save.h"
 #include "trs_stringy.h"
 #include "trs_uart.h"
+#include "trs_xebec.h"
 
 #define MAX_SCALE   4
 #define OPTIONS     (int)(sizeof(options) / sizeof(options[0]))
@@ -109,6 +112,7 @@ static void opt_doublestep(const char *arg, int intarg, int *stringarg);
 static void opt_stepmap(const char *arg, int intarg, int *stringarg);
 #endif
 static void opt_file(const char *arg, int intarg, int *stringarg);
+static void opt_hardctl(const char *arg, int intarg, int *variable);
 static void opt_hexval(const char *arg, int intarg, int *variable);
 static void opt_intval(const char *arg, int intarg, int *variable);
 static void opt_joybuttonmap(const char *arg, int intarg, int *stringarg);
@@ -221,6 +225,7 @@ static const struct {
   { "hard1",           opt_file,          1, 1, "h"                   },
   { "hard2",           opt_file,          1, 2, "h"                   },
   { "hard3",           opt_file,          1, 3, "h"                   },
+  { "hardcontroller",  opt_hardctl,       1, 0, NULL                  },
   { "harddir",         opt_dirname,       1, 0, trs_hard_dir          },
   { "hd",              opt_dirname,       1, 0, trs_hard_dir          },
   { "hdboot",          opt_value,         0, 1, &trs_hd_boot          },
@@ -393,6 +398,10 @@ static const struct {
   { "wafer6",          opt_file,          1, 6, "w"                   },
   { "wafer7",          opt_file,          1, 7, "w"                   },
   { "window",          opt_window,        1, 0, NULL                  },
+  { "x0",              opt_file,          1, 0, "x"                   },
+  { "x1",              opt_file,          1, 1, "x"                   },
+  { "xebec0",          opt_file,          1, 0, "x"                   },
+  { "xebec1",          opt_file,          1, 1, "x"                   },
   { "xmem",            opt_memory,        0, 7, &xmem80               },
   { "xmem80",          opt_memory,        0, 7, &xmem80               },
   { "y",               opt_intval,        1, 7, NULL                  },
@@ -539,6 +548,21 @@ static void opt_clock(const char *arg, int intarg, int *stringarg)
   }
 }
 
+static void opt_hardctl(const char *arg, int intarg, int *variable)
+{
+  (void)intarg;
+  (void)variable;
+
+  if (strcasecmp(arg, "omti") == 0)
+    hdctl_set_active(OMTI_DRIVE);
+  else if (strcasecmp(arg, "xebec") == 0)
+    hdctl_set_active(XEBEC_DRIVE);
+  else if (strcasecmp(arg, "wd1000") == 0 || strcasecmp(arg, "wd") == 0)
+    hdctl_set_active(HARD_DRIVE);
+  else
+    error("unknown hardcontroller '%s' (use wd1000, omti or xebec)", arg);
+}
+
 static void opt_dirname(const char *arg, int intarg, int *stringarg)
 {
   struct stat st = { 0 };
@@ -617,6 +641,12 @@ static void opt_file(const char *arg, int intarg, int *stringarg)
         trs_omti_attach(intarg, arg);
       else
         trs_omti_remove(intarg);
+      break;
+    case 'x':
+      if (arg[0])
+        trs_xebec_attach(intarg, arg);
+      else
+        trs_xebec_remove(intarg);
       break;
     case 'w':
       if (arg[0])
@@ -888,11 +918,14 @@ int trs_load_config_file(void)
   for (i = 0; i < 8; i++)
     trs_disk_remove(i);
 
-  for (i = 0; i < 4; i++)
+  for (i = 0; i < TRS_HARD_MAXDRIVES; i++)
     trs_hard_remove(i);
 
-  for (i = 0; i < 2; i++)
+  for (i = 0; i < TRS_OMTI_MAXDRIVES; i++)
     trs_omti_remove(i);
+
+  for (i = 0; i < TRS_XEBEC_MAXDRIVES; i++)
+    trs_xebec_remove(i);
 
   for (i = 0; i < 8; i++)
     stringy_remove(i);
@@ -1133,13 +1166,16 @@ int trs_write_config_file(const char *filename)
       Z80_HALT == 'h' ? "halt"  :
       Z80_HALT == 'r' ? "reset" : "");
 
-  for (i = 0; i < 4; i++)
+  for (i = 0; i < TRS_HARD_MAXDRIVES; i++)
     fprintf(config_file, "hard%d\t\t= %s\n", i, trs_hard_getfilename(i));
 
+  fprintf(config_file, "hardcontroller\t= %s\n",
+      hdctl_get_active() == OMTI_DRIVE  ? "omti"  :
+      hdctl_get_active() == XEBEC_DRIVE ? "xebec" : "wd1000");
   fprintf(config_file, "harddir\t\t= %s\n", trs_hard_dir);
   fprintf(config_file, "%shdboot\n", option(trs_hd_boot));
 
-  for (i = 0; i < 2; i++)
+  for (i = 0; i < TRS_OMTI_MAXDRIVES; i++)
     fprintf(config_file, "omti%d\t\t= %s\n", i, trs_omti_getfilename(i));
 
   fprintf(config_file, "%shuffman\n", option(huffman));
@@ -1225,6 +1261,9 @@ int trs_write_config_file(const char *filename)
 
   trs_get_window(&x, &y, &w, &h);
   fprintf(config_file, "window\t\t= %d,%d,%d,%d\n", x, y, w, h);
+
+  for (i = 0; i < TRS_XEBEC_MAXDRIVES; i++)
+    fprintf(config_file, "xebec%d\t\t= %s\n", i, trs_xebec_getfilename(i));
 
   fprintf(config_file, "%sxmem80\n", option(xmem80));
   fprintf(config_file, "year\t\t= %d\n", trs_year);

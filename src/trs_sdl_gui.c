@@ -46,7 +46,9 @@
 #include "trs.h"
 #include "trs_cassette.h"
 #include "trs_disk.h"
+#include "trs_clones.h"
 #include "trs_hard.h"
+#include "trs_hdctl.h"
 #include "trs_memory.h"
 #include "trs_mkdisk.h"
 #include "trs_omti.h"
@@ -55,6 +57,7 @@
 #include "trs_state_save.h"
 #include "trs_stringy.h"
 #include "trs_uart.h"
+#include "trs_xebec.h"
 
 #define ENTRY         5
 #define TITLE         6
@@ -73,7 +76,7 @@ static int filelistsize;
 
 typedef struct menu_entry {
   char text[64];
-  int const type;
+  int type;
 } MENU;
 
 static const char *drives[] = {
@@ -86,23 +89,6 @@ static const char *drives[] = {
   "    5",
   "    6",
   "    7"
-};
-
-/* Drive-picker choices for gui_hard_menu()'s "Create Hard Disk Image"
- * action: the four WD1000 slots plus the two OMTI slots, since a newly
- * created blank .hdv is equally valid for either controller (same Reed
- * header, see trs_create_blank_hard()) but they're separate attach points
- * (trs_hard_attach() vs trs_omti_attach()). Kept separate from the shared
- * drives[] array above so this doesn't affect the other menus that slice
- * that array to different lengths (floppy, stringy, etc). */
-static const char *hard_create_drives[] = {
-  " None",
-  "    0",
-  "    1",
-  "    2",
-  "    3",
-  "omti0",
-  "omti1"
 };
 
 static const char *yes_no[] = {
@@ -882,6 +868,23 @@ redraw:
   }
 }
 
+/*
+ * Drive index of a hard-disk menu row within its own controller: the
+ * count of earlier rows sharing the same controller type.  Layout order
+ * independent, so the three hard controllers can appear in any order and
+ * any count without hardcoded offsets.
+ */
+static int hard_unit_index(const MENU *entry, int selection)
+{
+  int i, unit = 0;
+
+  for (i = 0; i < selection; i++)
+    if (entry[i].type == entry[selection].type)
+      unit++;
+
+  return unit;
+}
+
 int gui_menu(const char *title, const MENU *entry, int selection)
 {
   int num = 0;
@@ -954,10 +957,10 @@ int gui_menu(const char *title, const MENU *entry, int selection)
               trs_disk_remove(selection);
               break;
             case HARD_DRIVE:
-              trs_hard_remove(selection);
-              break;
             case OMTI_DRIVE:
-              trs_omti_remove(selection - TRS_HARD_MAXDRIVES);
+            case XEBEC_DRIVE:
+              hdctl_remove(entry[selection].type,
+                           hard_unit_index(entry, selection));
               break;
             case WAFER:
               stringy_remove(selection);
@@ -982,17 +985,17 @@ int gui_menu(const char *title, const MENU *entry, int selection)
                 trs_disk_insert(selection, filename);
               break;
             case HARD_DRIVE:
-              if (gui_file(trs_hard_getfilename(selection)[0] ?
-                  trs_hard_getfilename(selection) : trs_hard_dir,
-                  filename, HDV, 0, "Hard Disk Image") >= 0)
-                trs_hard_attach(selection, filename);
-              break;
             case OMTI_DRIVE:
-              if (gui_file(trs_omti_getfilename(selection - TRS_HARD_MAXDRIVES)[0] ?
-                  trs_omti_getfilename(selection - TRS_HARD_MAXDRIVES) : trs_hard_dir,
-                  filename, HDV, 0, "OMTI Hard Disk Image") >= 0)
-                trs_omti_attach(selection - TRS_HARD_MAXDRIVES, filename);
+            case XEBEC_DRIVE: {
+              int const htype = entry[selection].type;
+              int const unit = hard_unit_index(entry, selection);
+              const char *cur = hdctl_getfilename(htype, unit);
+
+              if (gui_file(cur[0] ? cur : trs_hard_dir,
+                  filename, HDV, 0, "Hard Disk Image") >= 0)
+                hdctl_attach(htype, unit, filename);
               break;
+            }
             case WAFER:
               if (gui_file(stringy_get_name(selection)[0] ?
                   stringy_get_name(selection) : trs_cass_dir,
@@ -1013,19 +1016,29 @@ int gui_menu(const char *title, const MENU *entry, int selection)
               break;
           }
           return selection;
-        case SDLK_SPACE:
-          if (entry[selection].type < ENTRY) {
-            if (trs_write_protect(entry[selection].type, selection) < 0)
+        case SDLK_SPACE: {
+          int const wtype = entry[selection].type;
+
+          /* Hard-disk rows carry a per-controller unit index; floppy,
+             wafer and cassette rows use the row number directly.  (The
+             old `type < ENTRY` test silently excluded OMTI/XEBEC, whose
+             type values sit above ENTRY.) */
+          if (hdctl_is_hard_type(wtype)) {
+            if (trs_write_protect(wtype, hard_unit_index(entry, selection)) < 0)
+              gui_error("Write-Protection");
+          } else if (wtype < ENTRY) {
+            if (trs_write_protect(wtype, selection) < 0)
               gui_error("Write-Protection");
           }
           return selection;
+        }
         case SDLK_BACKSPACE:
         case SDLK_ESCAPE:
           return -1;
       }
     }
 
-    if (entry[selection].type == HARD_DRIVE || entry[selection].type == OMTI_DRIVE)
+    if (hdctl_is_hard_type(entry[selection].type))
       return selection; /* Update Hard Disk Geometry */
   }
 }
@@ -1443,57 +1456,87 @@ void gui_disk_menu(void)
 
 void gui_hard_menu(void)
 {
-  MENU menu[] =
-  {{" 0: ", HARD_DRIVE},
-   {" 1: ", HARD_DRIVE},
-   {" 2: ", HARD_DRIVE},
-   {" 3: ", HARD_DRIVE},
-   {" omti0: ", OMTI_DRIVE},
-   {" omti1: ", OMTI_DRIVE},
-   {"", TITLE},
-   {"Save Disk Set", SAVE_SET},
-   {"Load Disk Set", LOAD_SET},
-   {"", TITLE},
-   {"Cylinder Count                                           ", ENTRY},
-   {"Head Count                                               ", ENTRY},
-   {"Sector Count                                             ", ENTRY},
-   {"Insert Created Hard Disk Image Into Drive                ", ENTRY},
-   {"Create Hard Disk Image with Above Parameters", ENTRY},
-   {"", 0}};
-  static int drive;
+  /* The three controllers a Genie IIIs can be fitted with, in popup order. */
+  static const char *ctrl_names[] = { "WD1000", "OMTI", "Xebec" };
+  static const int   ctrl_types[] = { HARD_DRIVE, OMTI_DRIVE, XEBEC_DRIVE };
+  int const genie3s = (trs_clones.model == GENIE3S);
+  static int drive;   /* "Insert into Drive" target: 0 = None, 1..nslots */
   int cylinders = 202;
   int heads     = 0;
   int sectors   = 256;
   int selection = 0;
 
   while (1) {
+    /* Only one controller is fitted at a time; show its slots.  On non-
+       GENIE3S machines the controller is always the WD1000. */
+    int const active = genie3s ? hdctl_get_active() : HARD_DRIVE;
+    int const nslots = hdctl_maxdrives(active);
+    MENU menu[16];
     char input[5];
-    int  i;
-    int  value;
+    int  n = 0, i, value;
+    int  ctrl_row = -1, cyl_row, head_row, sec_row, insert_row, create_row;
 
-    for (i = 0; i < 4; i++) {
-      gui_limit(trs_hard_getfilename(i), &menu[i].text[4], 56);
-      menu[i].text[0] = trs_hard_getwriteprotect(i) ? '*' : ' ';
+    /* Pre-fill the geometry fields from the highlighted drive, if any. */
+    if (selection < nslots)
+      hdctl_getgeometry(active, selection, &cylinders, &heads, &sectors);
+
+    /* Drive-slot rows, all of the active controller's type. */
+    for (i = 0; i < nslots; i++) {
+      snprintf(menu[n].text, sizeof(menu[n].text), " %d: ", i);
+      gui_limit(hdctl_getfilename(active, i), &menu[n].text[4], 56);
+      menu[n].text[0] = hdctl_getwriteprotect(active, i) ? '*' : ' ';
+      menu[n].type = active;
+      n++;
     }
-    for (i = 0; i < TRS_OMTI_MAXDRIVES; i++) {
-      gui_limit(trs_omti_getfilename(i), &menu[4 + i].text[8], 52);
-      menu[4 + i].text[0] = trs_omti_getwriteprotect(i) ? '*' : ' ';
+    menu[n].text[0] = 0; menu[n].type = TITLE; n++;
+
+    if (genie3s) {
+      snprintf(menu[n].text, sizeof(menu[n].text), "%-60s", "Controller");
+      for (i = 0; i < 3; i++)
+        if (ctrl_types[i] == active)
+          snprintf(&menu[n].text[53], 7, "%6s", ctrl_names[i]);
+      menu[n].type = ENTRY;
+      ctrl_row = n++;
     }
 
-    if (selection < 4)
-      trs_hard_getgeometry(selection, &cylinders, &heads, &sectors);
-    else if (selection < 4 + TRS_OMTI_MAXDRIVES)
-      trs_omti_getgeometry(selection - 4, &cylinders, &heads, &sectors);
+    snprintf(menu[n].text, sizeof(menu[n].text), "%s", "Save Disk Set");
+    menu[n].type = SAVE_SET; n++;
+    snprintf(menu[n].text, sizeof(menu[n].text), "%s", "Load Disk Set");
+    menu[n].type = LOAD_SET; n++;
+    menu[n].text[0] = 0; menu[n].type = TITLE; n++;
 
-    snprintf(&menu[10].text[55], 6, "%5d", cylinders);
-    snprintf(&menu[11].text[57], 4, "%3d", heads);
-    snprintf(&menu[12].text[57], 4, "%3d", sectors);
-    snprintf(&menu[13].text[55], 6, "%s", hard_create_drives[drive]);
+    snprintf(menu[n].text, sizeof(menu[n].text), "%-60s", "Cylinder Count");
+    snprintf(&menu[n].text[55], 6, "%5d", cylinders);
+    menu[n].type = ENTRY; cyl_row = n++;
+    snprintf(menu[n].text, sizeof(menu[n].text), "%-60s", "Head Count");
+    snprintf(&menu[n].text[57], 4, "%3d", heads);
+    menu[n].type = ENTRY; head_row = n++;
+    snprintf(menu[n].text, sizeof(menu[n].text), "%-60s", "Sector Count");
+    snprintf(&menu[n].text[57], 4, "%3d", sectors);
+    menu[n].type = ENTRY; sec_row = n++;
+
+    if (drive > nslots) drive = 0;   /* clamp if the controller changed */
+    snprintf(menu[n].text, sizeof(menu[n].text), "%-60s",
+             "Insert Created Hard Disk Image Into Drive");
+    snprintf(&menu[n].text[54], 6, "%5s", drives[drive]); /* drives[]: None,0..7 */
+    menu[n].type = ENTRY; insert_row = n++;
+    snprintf(menu[n].text, sizeof(menu[n].text), "%s",
+             "Create Hard Disk Image with Above Parameters");
+    menu[n].type = ENTRY; create_row = n++;
+
+    menu[n].text[0] = 0; menu[n].type = 0; /* terminator */
+
     gui_clear();
-
     selection = gui_menu(" Hard Disk Management ", menu, selection);
-    switch (selection) {
-      case 10:
+
+    if (genie3s && selection == ctrl_row) {
+      int cur = 0;
+      for (i = 0; i < 3; i++)
+        if (ctrl_types[i] == active) cur = i;
+      cur = gui_popup("Controller", ctrl_names, 3, cur);
+      hdctl_set_active(ctrl_types[cur]);
+      if (selection > 0) selection = 0;   /* row layout may shrink */
+    } else if (selection == cyl_row) {
         snprintf(input, 5, "%d", cylinders);
         if (gui_input(" Enter Cylinder Count ", input, input, 4, 0) > 0) {
           value = atoi(input);
@@ -1507,8 +1550,7 @@ void gui_hard_menu(void)
             }
           }
         }
-        break;
-      case 11:
+    } else if (selection == head_row) {
         snprintf(input, 2, "%d", heads);
         if (gui_input(" Enter Head Count ", input, input, 1, 0) > 0) {
           value = atoi(input);
@@ -1519,8 +1561,7 @@ void gui_hard_menu(void)
               gui_message("ERROR", "Head Count must be between 0 and 8");
           }
         }
-        break;
-      case 12:
+    } else if (selection == sec_row) {
         snprintf(input, 4, "%d", sectors);
         if (gui_input(" Enter Sector Count ", input, input, 3, 0) > 0) {
           value = atoi(input);
@@ -1531,11 +1572,9 @@ void gui_hard_menu(void)
               gui_message("ERROR", "Sector Count must be between 4 and 256");
           }
         }
-        break;
-      case 13:
-        drive = gui_popup("Drive", hard_create_drives, 7, drive);
-        break;
-      case 14:
+    } else if (selection == insert_row) {
+        drive = gui_popup("Drive", drives, nslots + 1, drive);
+    } else if (selection == create_row) {
         filename[0] = 0;
         if (gui_input(" Enter Filename for Hard Disk Image ",
             trs_hard_dir, filename, FILENAME_MAX, 1) > 0) {
@@ -1543,15 +1582,13 @@ void gui_hard_menu(void)
           if (gui_file_overwrite()) {
             if (trs_create_blank_hard(filename, cylinders, heads, sectors) != 0)
               gui_error(filename);
-            else if (drive >= 1 && drive <= 4)
-              trs_hard_attach(drive - 1, filename);
-            else if (drive >= 5)
-              trs_omti_attach(drive - 5, filename);
+            else if (drive)
+              /* drive-1 is the slot; attach to the active controller. */
+              hdctl_attach(active, drive - 1, filename);
             return;
           }
         }
-        break;
-      case -1:
+    } else if (selection == -1) {
         return;
     }
   }

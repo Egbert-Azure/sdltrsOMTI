@@ -1,6 +1,11 @@
-CLAUDE.md
 build/
 src ST 225/
-# dmk-working/
+dmk-working/
+logs/
+.vscode/
+*.hdv
 .DS_Store
 sdl2trs-omti.command
+push.command
+boot_gdos24_xebec.command
+boot_gdos24_xebec_debug.command

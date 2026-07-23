@@ -52,9 +52,12 @@
 #include "trs_cp500.h"
 #include "trs_disk.h"
 #include "trs_hard.h"
+#include "trs_hdctl.h"
+#include "trs_mkdisk.h"
 #include "trs_memory.h"
 #include "trs_omti.h"
 #include "trs_state_save.h"
+#include "trs_xebec.h"
 #include "trs_stringy.h"
 #include "trs_uart.h"
 
@@ -301,13 +304,26 @@ void z80_out(int port, int value)
           case 0x55: /* TRS_HARD_CYLHI */
           case 0x56: /* TRS_HARD_SDH */
           case 0x57: /* TRS_HARD_COMMAND */
-            trs_hard_out(port + 0x78, value); /* 0xC8 - 0xCF */
+            if (hdctl_get_active() == HARD_DRIVE)
+              trs_hard_out(port + 0x78, value); /* 0xC8 - 0xCF */
             break;
-          case 0x40: /* TRS_OMTI_PORT */
-          case 0x41: /* TRS_OMTI_STATUS */
-          case 0x42: /* TRS_OMTI_SELECT */
-          case 0x43: /* TRS_OMTI_MASK */
-            trs_omti_out(port, value);
+          case 0x40: /* TRS_OMTI_PORT   / TRS_XEBEC_PORT */
+          case 0x41: /* TRS_OMTI_STATUS / TRS_XEBEC_STATUS */
+          case 0x42: /* TRS_OMTI_SELECT / TRS_XEBEC_SELECT */
+            if (hdctl_get_active() == XEBEC_DRIVE)
+              trs_xebec_out(port, value);
+            else if (hdctl_get_active() == OMTI_DRIVE)
+              trs_omti_out(port, value);
+            break;
+          case 0x00: /* TRS_XEBEC_TCS_DATA: TCS onboard SASI adapter, */
+          case 0x01: /* TRS_XEBEC_TCS_CTRL: the interface GDOS 2.4's  */
+          case 0x02: /* TRS_XEBEC_TCS_SEL:  hard-disk driver uses     */
+            if (hdctl_get_active() == XEBEC_DRIVE)
+              trs_xebec_tcs_out(port, value);
+            break;
+          case 0x43: /* TRS_OMTI_MASK -- no Xebec equivalent */
+            if (hdctl_get_active() == OMTI_DRIVE)
+              trs_omti_out(port, value);
             break;
           case 0x5B:
             rtc_reg = value >> 4;
@@ -809,13 +825,29 @@ int z80_in(int port)
           case 0x55: /* TRS_HARD_CYLHI */
           case 0x56: /* TRS_HARD_SDH */
           case 0x57: /* TRS_HARD_STATUS */
-            value = trs_hard_in(port + 0x78); /* 0xC8 - 0xCF */
+            if (hdctl_get_active() == HARD_DRIVE)
+              value = trs_hard_in(port + 0x78); /* 0xC8 - 0xCF */
             break;
-          case 0x40: /* TRS_OMTI_PORT */
-          case 0x41: /* TRS_OMTI_STATUS */
-          case 0x42: /* TRS_OMTI_SELECT */
-          case 0x43: /* TRS_OMTI_MASK */
-            value = trs_omti_in(port);
+          case 0x40: /* TRS_OMTI_PORT   / TRS_XEBEC_PORT */
+          case 0x41: /* TRS_OMTI_STATUS / TRS_XEBEC_STATUS */
+            if (hdctl_get_active() == XEBEC_DRIVE)
+              value = trs_xebec_in(port);
+            else if (hdctl_get_active() == OMTI_DRIVE)
+              value = trs_omti_in(port);
+            break;
+          case 0x00: /* TRS_XEBEC_TCS_DATA: TCS onboard SASI adapter, */
+          case 0x01: /* TRS_XEBEC_TCS_CTRL: the interface GDOS 2.4's
+                        hard-disk driver uses (0x02/SEL is write-only) */
+            if (hdctl_get_active() == XEBEC_DRIVE)
+              value = trs_xebec_tcs_in(port);
+            break;
+          case 0x42: /* TRS_OMTI_SELECT -- no Xebec read equivalent (write only) */
+            if (hdctl_get_active() == OMTI_DRIVE)
+              value = trs_omti_in(port);
+            break;
+          case 0x43: /* TRS_OMTI_MASK -- no Xebec equivalent */
+            if (hdctl_get_active() == OMTI_DRIVE)
+              value = trs_omti_in(port);
             break;
           case 0x5A:
             value = rtc_read(rtc_reg);
