@@ -4,8 +4,7 @@
 
 Usage guide. For the controller protocol, see `OMTI_CONTROLLER.md`. For the debugging history behind these choices, see `DEBUG.md`.
 
-![alt text](image.png)
-<!-- TODO(7): set a real image path (e.g. docs/c-prompt.png) and meaningful alt text. As written, image.png must sit next to this file at the repo root or it renders broken on GitHub. -->
+![Holte CP/M 3.0 booting from hard disk on the Genie IIIs: RESBIOS3/BNKBIOS3/RESBDOS3/BNKBDOS3 loaded, 60K TPA, two Seagate ST 225 (21.4 MB) drives, C> prompt](../images/holte-cpm3-hd-boot.png)
 
 ## 1. Build
 
