@@ -16,6 +16,30 @@ int hdctl_is_hard_type(int type)
   return type == HARD_DRIVE || type == OMTI_DRIVE || type == XEBEC_DRIVE;
 }
 
+/* 0 = no explicit choice pinned yet; otherwise a hard-controller type. */
+static int active_type;
+
+void hdctl_set_active(int type)
+{
+  if (hdctl_is_hard_type(type))
+    active_type = type;
+}
+
+int hdctl_get_active(void)
+{
+  if (hdctl_is_hard_type(active_type))
+    return active_type;
+
+  /* Nothing pinned: infer from attached images, preferring the SASI
+     controllers the Genie IIIs actually uses (Xebec first, as it is the
+     genuine hardware). */
+  if (hdctl_getfilename(XEBEC_DRIVE, 0)[0] != 0)
+    return XEBEC_DRIVE;
+  if (hdctl_getfilename(OMTI_DRIVE, 0)[0] != 0)
+    return OMTI_DRIVE;
+  return HARD_DRIVE;
+}
+
 int hdctl_maxdrives(int type)
 {
   switch (type) {

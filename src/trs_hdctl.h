@@ -20,6 +20,18 @@
 /* True if type is one of the hard-disk controller types. */
 extern int  hdctl_is_hard_type(int type);
 
+/*
+ * Which single controller the machine is fitted with.  Only meaningful on
+ * the Genie IIIs (GENIE3S), where WD1000, OMTI and Xebec are mutually
+ * exclusive alternatives on the same machine; other TRS-80 models only
+ * ever have WD1000.  hdctl_set_active() pins an explicit choice (GUI /
+ * CLI / config); hdctl_get_active() returns that choice, or — if none was
+ * pinned — auto-resolves from which backend has an image attached (Xebec,
+ * then OMTI, else WD1000), so existing image-only setups keep working.
+ */
+extern void hdctl_set_active(int type);
+extern int  hdctl_get_active(void);
+
 /* Number of drive slots this controller exposes (0 if not a hard type). */
 extern int  hdctl_maxdrives(int type);
 
