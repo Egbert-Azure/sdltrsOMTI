@@ -52,6 +52,7 @@
 #include "error.h"
 #include "reed.h"
 #include "trs.h"
+#include "trs_hard_image.h"
 #include "trs_xebec.h"
 #include "trs_state_save.h"
 
@@ -84,15 +85,7 @@ typedef enum {
   XEBEC_PH_STATUS
 } XebecPhase;
 
-/* Structure describing one drive (LUN) */
-typedef struct {
-  FILE* file;
-  char filename[FILENAME_MAX];
-  int writeprot;
-  int cyls;
-  int heads;
-  int secs;
-} Drive;
+/* One drive (LUN); geometry decoding is shared (trs_hard_image.h) */
 
 /* Structure describing controller state */
 typedef struct {
@@ -115,7 +108,7 @@ typedef struct {
   Uint8 final_status;   /* next-to-last status byte */
   int status_index;     /* 0 = next-to-last byte pending, 1 = last (zero) byte pending */
 
-  Drive d[TRS_XEBEC_MAXDRIVES];
+  HardImage d[TRS_XEBEC_MAXDRIVES];
 } State;
 
 static State state;
@@ -569,7 +562,7 @@ static int xebec_data_in(void)
  */
 static int xebec_seek(int lun, long lba)
 {
-  Drive *d = &state.d[lun];
+  HardImage *d = &state.d[lun];
   long cyl, head, sector;
 
   if (d->file == NULL && xebec_open(lun) != 0) return -1;
@@ -579,8 +572,8 @@ static int xebec_seek(int lun, long lba)
   head   = cyl % d->heads;
   cyl    = cyl / d->heads;
 
-  if (d->file && fseek(d->file, sizeof(ReedHardHeader) +
-      (long)state.secsize * ((cyl * d->heads + head) * d->secs + sector), 0) != 0) {
+  if (d->file && fseek(d->file,
+      hard_image_offset(d, state.secsize, cyl, head, sector), 0) != 0) {
     file_error("xebec%d: fseek '%s'", lun, d->filename);
     return -1;
   }
@@ -598,68 +591,17 @@ static int xebec_seek(int lun, long lba)
  */
 static int xebec_open(int drive)
 {
-  Drive *d = &state.d[drive];
-  ReedHardHeader rhh;
-  size_t res;
-  int secs;
+  HardImage *d = &state.d[drive];
 
-  if (d->filename[0] == 0)
-    goto fail;
-
-  if (d->file != NULL) {
-    fclose(d->file);
-    d->file = NULL;
-  }
-
-  d->file = fopen(d->filename, "rb+");
-  if (d->file == NULL) {
-    if (errno == EACCES || errno == EROFS)
-      d->file = fopen(d->filename, "rb");
-    if (d->file == NULL) {
-      file_error("open xebec%d: '%s'", drive, d->filename);
-      goto fail;
-    }
-    d->writeprot = 1;
-  } else {
-    d->writeprot = 0;
-  }
-
-  res = fread(&rhh, sizeof(rhh), 1, d->file);
-  if (res != 1 || rhh.id1 != 0x56 || rhh.id2 != 0xcb || rhh.ver >= 0x20) {
-    error("unrecognized xebec%d drive image: '%s'", drive, d->filename);
-    goto fail;
-  }
-
-  if (rhh.flag1 & 0x80) d->writeprot = 1;
-
-  d->cyls = (rhh.cylhi << 8) | (rhh.cyllo & 0xff);
-
-  secs = rhh.sec ? rhh.sec : 256;
-  if (rhh.heads == 0) {
-    d->secs  = XEBEC_SEC_PER_TRK;
-    d->heads = secs / XEBEC_SEC_PER_TRK;
-  } else {
-    d->heads = rhh.heads;
-    d->secs  = secs / d->heads;
-  }
-
-  if ((secs % d->secs) != 0 || d->heads <= 0 || d->heads > XEBEC_MAXHEADS) {
-    error("unusable geometry (%d heads/%d secs) in xebec%d image: '%s'",
-        d->heads, d->secs, drive, d->filename);
-    goto fail;
-  }
+  if (hard_image_open(d, drive, "xebec",
+                      XEBEC_SEC_PER_TRK, XEBEC_MAXHEADS) != 0)
+    return -1;
 
   state.status = XEBEC_STATUS_IDLE;
   return 0;
-
-fail:
-  if (d->file) fclose(d->file);
-  d->file = NULL;
-  d->filename[0] = 0;
-  return -1;
 }
 
-static void trs_save_xebecdrive(FILE *file, Drive *d)
+static void trs_save_xebecdrive(FILE *file, HardImage *d)
 {
   int file_not_null = (d->file != NULL);
 
@@ -671,7 +613,7 @@ static void trs_save_xebecdrive(FILE *file, Drive *d)
   trs_save_int(file, &d->secs, 1);
 }
 
-static void trs_load_xebecdrive(FILE *file, Drive *d)
+static void trs_load_xebecdrive(FILE *file, HardImage *d)
 {
   int file_not_null;
 

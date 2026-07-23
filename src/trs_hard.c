@@ -35,6 +35,7 @@
 #include "reed.h"
 #include "trs.h"
 #include "trs_hard.h"
+#include "trs_hard_image.h"
 #include "trs_imp_exp.h"
 #include "trs_state_save.h"
 
@@ -44,16 +45,7 @@
 
 /* Private types and data */
 
-/* Structure describing one drive */
-typedef struct {
-  FILE* file;
-  char filename[FILENAME_MAX];
-  /* Values decoded from rhh */
-  int writeprot;
-  int cyls;  /* cyls per drive */
-  int heads; /* tracks per cyl */
-  int secs;  /* secs per track */
-} Drive;
+/* One attached drive image; geometry decoding is shared (trs_hard_image.h) */
 
 /* Structure describing controller state */
 typedef struct {
@@ -78,7 +70,7 @@ typedef struct {
   int bytesdone;
 
   /* Drive geometries and files */
-  Drive d[TRS_HARD_MAXDRIVES];
+  HardImage d[TRS_HARD_MAXDRIVES];
 } State;
 
 static State state;
@@ -522,74 +514,19 @@ static void hard_seek(void)
 }
 
 /*
- * 1) Make sure the file for the current drive is open.  If the file
- * cannot be opened, return -1 and set the controller error status.
- *
- * 2) If newly opening the file, establish the hardware write protect
- * status and geometry in the Drive structure.
- *
- * 3) Set the hardware write protect status and geometry in the Drive
- * structure.
- *
- * 4) Return 0 if OK, -1 if invalid header, errno value otherwise.
+ * Make sure the file for the given drive is open, decoding its Reed
+ * header and geometry (via the shared trs_hard_image helper).  On success
+ * set the controller ready/seek-done status and return 0; on failure set
+ * the controller error status and return -1.
  */
 static int hard_open(int drive)
 {
-  Drive *d = &state.d[drive];
-  ReedHardHeader rhh;
-  size_t res;
-  int err = -1;
-  int secs;
+  HardImage *d = &state.d[drive];
 
-  if (d->filename[0] == 0)
-    goto fail;
-
-  if (d->file != NULL) {
-    fclose(d->file);
-    d->file = NULL;
-  }
-  /* First try opening for reading and writing */
-  d->file = fopen(d->filename, "rb+");
-  if (d->file == NULL) {
-    if (errno == EACCES || errno == EROFS) {
-    /* No luck, try for reading only */
-      d->file = fopen(d->filename, "rb");
-    }
-    if (d->file == NULL) {
-      file_error("open hard%d: '%s'", drive, d->filename);
-      err = errno;
-      goto fail;
-    }
-    d->writeprot = 1;
-  } else {
-    d->writeprot = 0;
-  }
-
-  /* Read in the Reed header and check some basic magic numbers (not all) */
-  res = fread(&rhh, sizeof(rhh), 1, d->file);
-  if (res != 1 || rhh.id1 != 0x56 || rhh.id2 != 0xcb || rhh.ver >= 0x20) {
-    error("unrecognized hard%d drive image: '%s'", drive, d->filename);
-    goto fail;
-  }
-
-  if (rhh.flag1 & 0x80) d->writeprot = 1;
-
-  /* Use the number of cylinders specified in the header */
-  d->cyls = (rhh.cylhi << 8)    /* MSB */
-          | (rhh.cyllo & 0xFF); /* LSB */
-
-  secs = rhh.sec ? rhh.sec : 256;
-  if (rhh.heads == 0) {
-    /* header gives only secs/cyl. Compute number of heads from
-       this and the assumed number of secs/track */
-
-    /* use the number of secs/track that RSHARD requires */
-    d->secs  = TRS_HARD_SEC_PER_TRK;
-    d->heads = secs / TRS_HARD_SEC_PER_TRK;
-  } else {
-    /* header includes head count */
-    d->heads = rhh.heads;
-    d->secs  = secs / d->heads;
+  if (hard_image_open(d, drive, "hard",
+                      TRS_HARD_SEC_PER_TRK, TRS_HARD_MAXHEADS) != 0) {
+    hard_error(TRS_HARD_NFERR);
+    return -1;
   }
 
 #if ZBX
@@ -598,22 +535,8 @@ static int hard_open(int drive)
           drive, d->cyls, d->heads, d->secs);
 #endif
 
-  if ((rhh.sec % d->secs) != 0 ||
-      d->heads <= 0 || d->heads > TRS_HARD_MAXHEADS) {
-    error("unusable geometry (%d heads/%d secs) in hard%d image: '%s'",
-          d->heads, d->secs, drive, d->filename);
-    goto fail;
-  }
-
   state.status = TRS_HARD_READY | TRS_HARD_SEEKDONE;
   return 0;
-
-fail:
-  if (d->file) fclose(d->file);
-  d->file = NULL;
-  d->filename[0] = 0;
-  hard_error(TRS_HARD_NFERR);
-  return err;
 }
 
 /*
@@ -624,7 +547,7 @@ fail:
  */
 static int hard_sector(int newstatus)
 {
-  const Drive *d = &state.d[state.drive];
+  const HardImage *d = &state.d[state.drive];
 
   if (d->file == NULL && hard_open(state.drive) != 0) return -1;
 
@@ -638,10 +561,8 @@ static int hard_sector(int newstatus)
   }
 
   if (d->file && fseek(d->file,
-    sizeof(ReedHardHeader) +
-    state.secsize * (state.cyl * d->heads * d->secs
-                  +  state.head * d->secs
-                  + (state.secnum % d->secs)), 0) != 0) {
+      hard_image_offset(d, state.secsize, state.cyl, state.head,
+                        state.secnum % d->secs), 0) != 0) {
       file_error("hard%d: fseek '%s'", state.drive, d->filename);
       hard_error(TRS_HARD_NFERR);
       return -1;
@@ -693,7 +614,7 @@ static void hard_data_out(int value)
   }
 }
 
-static void trs_save_harddrive(FILE *file, Drive *d)
+static void trs_save_harddrive(FILE *file, HardImage *d)
 {
   int file_not_null = (d->file != NULL);
 
@@ -705,7 +626,7 @@ static void trs_save_harddrive(FILE *file, Drive *d)
   trs_save_int(file, &d->secs, 1);
 }
 
-static void trs_load_harddrive(FILE *file, Drive *d)
+static void trs_load_harddrive(FILE *file, HardImage *d)
 {
   int file_not_null;
 
