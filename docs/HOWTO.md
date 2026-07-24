@@ -1,8 +1,8 @@
-<!-- /OMTI_USAGE.md — running sdltrsOMTI with a working OMTI hard disk -->
+<!-- /docs/HOWTO.md — running sdltrs-MultiHDC with a working OMTI hard disk -->
 
-# Running sdltrsOMTI with a working OMTI hard disk
+# Running sdltrs-MultiHDC with a working OMTI hard disk
 
-Usage guide. For the controller protocol, see `OMTI_CONTROLLER.md`. For the debugging history behind these choices, see `DEBUG.md`.
+Usage guide. For the controller protocol, see `OMTI_CONTROLLER.md`.
 
 ![Holte CP/M 3.0 booting from hard disk on the Genie IIIs: RESBIOS3/BNKBIOS3/RESBDOS3/BNKBDOS3 loaded, 60K TPA, two Seagate ST 225 (21.4 MB) drives, C> prompt](../images/holte-cpm3-hd-boot.png)
 
@@ -23,8 +23,6 @@ Use `HDV/g3s-omti-WORKING.hdv`. It is the only correct and complete OMTI image i
 - Both C: and D: are valid, clean CP/M partitions
 
 One `.hdv` is one physical drive holding two logical CP/M drives, C: and D:. You attach it once at `-omti0`; there is no separate file or slot for D:. The OMTI controller has no notion of C: or D:, so to the emulated hardware `-omti0` is a single flat block device. The split lives in the guest CP/M BIOS: `DISKIO1.MAC` (`DPBHD1`/`DPBHD2`) reads and writes the one image at two cylinder offsets, C: from cylinder 2 and D: from cylinder 307, where C: ends. The 1990s hardware worked the same way: one physical Seagate ST225 partitioned in software.
-<!-- TODO(1): an unfinished sentence "The message about ..." was left here. Delete it or finish the thought? The doubled "Seagate ST 225" banner is already explained in section 7. -->
-
 
 `g3s-omti-WORKING.hdv` is a live disk, not a template. Files you write to it (below) persist. To keep a pristine copy, back it up:
 
@@ -32,16 +30,9 @@ One `.hdv` is one physical drive holding two logical CP/M drives, C: and D:. You
 cp HDV/g3s-omti-WORKING.hdv HDV/g3s-omti-WORKING.backup.hdv
 ```
 
-To build a fresh one from scratch, see the docstring in `dmk-working/build_working_hdv.py` — a scripted, reproducible recipe that works around a bug in the original `COPYSYS.COM` (see `DEBUG.md`).
-<!-- TODO(2): a dangling "I needed to do this" was left here — finish the thought or remove it. -->
+To build a fresh one from scratch, see the docstring in `dmk-working/build_working_hdv.py` — a scripted, reproducible recipe that works around a bug in the original `COPYSYS.COM`.
 
-## 3. One-click launch
-
-Double-click `sdl2trs-omti.command` (repo root) in Finder. It boots straight into `HDV/g3s-omti-WORKING.hdv` with no floppy and no flags to remember, running the section 4 command with everything filled in. If your ROM archive isn't at the default path it checks (`~/path/to/GitHub/GenieIIIs/rom/...`), edit `ROM_PATH` near the top of the file.
-
-The script reads `~/.sdltrs.t8c` (the config file `sdl2trs` maintains) before applying its own flags. If you previously attached something to a floppy or hard slot through the GUI and saved config (Alt-menu → "Configuration/State Files"), it stays attached, because `sdl2trs` does not auto-save on quit and an omitted flag never clears a slot. The script clears every `disk` and `hard` slot itself, so this is safe either way.
-
-## 4. Boot directly from the hard disk (no floppy), manually
+## 3. Boot directly from the hard disk (no floppy), manually
 
 ```sh
 ./build/sdl2trs -model 1 \
@@ -52,11 +43,11 @@ The script reads `~/.sdltrs.t8c` (the config file `sdl2trs` maintains) before ap
   -nofullscreen
 ```
 
-The empty (`""`) slots matter. `~/.sdltrs.t8c` keeps whatever was last attached to each slot, and an omitted flag does not clear a stale value.
+The empty (`""`) slots matter. `~/.sdltrs.t8c` keeps whatever was last attached to each slot, and an omitted flag does not clear a stale value. `sdl2trs` does not auto-save on quit, so anything you attached through the GUI and saved to config (Alt-menu → "Configuration/State Files") stays attached until you explicitly clear it — which is what the empty flags above do.
 
 This boots straight to a `C>` prompt: the `GENIE IIIs SYSTEM` banner, the CP/M V3.0 loader banner, all four system components, then `C>`.
 
-## 5. Boot with a floppy also attached (copying files)
+## 4. Boot with a floppy also attached (copying files)
 
 Same as above, but give `-disk0` a real floppy image instead of `""`:
 
@@ -68,7 +59,7 @@ Same as above, but give `-disk0` a real floppy image instead of `""`:
   -nofullscreen
 ```
 
-`dmk-working/egcpm02a.dmk` (repo root, gitignored) is a safe working copy carrying `COPY.COM` and various tools. Never point `-disk0` directly at anything under `~/path/to/GitHub/GenieIIIs/`; always work from a copy (see the resume notes in `DEBUG.md` if you need another floppy).
+`dmk-working/egcpm02a.dmk` (repo root, gitignored) is a safe working copy carrying `COPY.COM` and various tools. Never point `-disk0` directly at anything under `~/path/to/GitHub/GenieIIIs/`; always work from a copy.
 
 ### Copying files
 
@@ -81,16 +72,16 @@ COPY C:FILENAME.EXT A:
 
 A file copied A: to C: this way is written to the `.hdv` and reads back correctly.
 
-## 6. GUI hard-disk management
+## 5. GUI hard-disk management
 
-Alt-H opens the Hard Disk Management screen. It shows the WD1000 slots (`hard0`–`hard3`) and OMTI slots (`omti0`/`omti1`), and lets you attach, detach, or insert images without restarting.
+Alt-H opens the Hard Disk Management screen. On the Genie IIIs it has a **Controller** selector — WD1000, OMTI, or Xebec (a real machine is fitted with exactly one, so only the active controller answers the bus) — and generic drive slots for whichever controller is active: WD1000 offers four (`hard0`–`hard3`), OMTI and Xebec two each (`omti0`/`omti1`, `xebec0`/`xebec1`). You can switch controller, attach, detach, insert a freshly created image, or toggle write-protect (Space) on any slot without restarting.
 
-## 7. Expected quirks (not bugs)
+## 6. Expected quirks (not bugs)
 
 - The boot banner prints `"Seagate ST 225 - 21.4 MB"` twice, once for C: and once for D:. The drive is 21.4 MB total, split into two ~10.4 MB partitions (C: DPB has `DSM=2591` blocks ≈ 10.4 MB; D: starts where C: ends, at cylinder 307). The init message in the original `HD2.MAC` is one hardcoded string printed on every successful drive init, and it reports the full-drive figure rather than the partition size, so it repeats. The 1990s hardware showed the same text; the partitioning is correct.
 - `dir d:` shows `"No File"`. That's correct: D: is an empty second partition.
 
-## 8. Debugging
+## 7. Debugging
 
 Add `-io 0xc` to any command above for OMTI/WD1000 port and command tracing on stdout:
 
