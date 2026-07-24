@@ -50,7 +50,7 @@ Upstream's `src/` holds 47 files: 32 byte-for-byte identical, 15 modified, none 
 | `src/debug.c` | +9 | `zbx` commands `omtidump`/`od` and `xebecdump`/`xd` to print controller state. |
 | `src/trs_memory.c` | +1 / −1 | Comment only: note that `trs_disk_init` now also inits the hard-disk controllers. |
 
-Drive caps differ per controller. WD1000 is capped at 4 (`TRS_HARD_MAXDRIVES` in the upstream `trs_hard.h`, matching its 2-bit SDH drive field). OMTI and Xebec are capped at 2, the hardware limit of their 1-bit SASI LUN, and those caps live in the added `trs_omti.h` / `trs_xebec.h` rather than in any upstream file.
+Drive caps differ per controller. WD1000 is capped at 4 (`TRS_HARD_MAXDRIVES` in `trs_hard.h`, matching its 2-bit SDH drive field). OMTI and Xebec are capped at 2, the hardware limit of their 1-bit SASI LUN, and those caps live in the added `trs_omti.h` / `trs_xebec.h` rather than in any upstream file.
 
 ## Not touched
 
