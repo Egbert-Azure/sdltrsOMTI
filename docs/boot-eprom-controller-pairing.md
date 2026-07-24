@@ -41,9 +41,7 @@ a clean, meaningful discriminator (see below).
 
 These match the hardware logic exactly — the whole point of an HD-boot EPROM
 is "try the disk, fall back to floppy," while the stock ROM doesn't boot HD at
-all. They have **not** been proven by disassembling the two `.bin` reset paths
-yet. To settle it: load each ROM as the boot ROM and `dis 0000` via scripted
-zbx, then read the boot sequence.
+all.
 
 ## The pairing (and why it isn't 1:1)
 
