@@ -32,7 +32,7 @@ a clean, meaningful discriminator (see below).
   So **OMTI is unreachable without the OMTI ROM.** (Confirmed against the
   investigation in `xebec-s1410-story.md`.)
 
-## Plausible but not yet byte-verified
+## Boot order EPROM depending 
 
 - **OMTI ROM boot order: hard drive first, then floppy.**
 - **Standard ROM boot order: floppy first** (effectively floppy-*only* for the
